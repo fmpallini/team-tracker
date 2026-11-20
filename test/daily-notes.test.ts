@@ -206,7 +206,7 @@ describe('renderDailyNotes', () => {
     fireInput(editorEl(container))
 
     const items = document.querySelectorAll('.tt-atref-item')
-    expect(items.length).toBe(3) // Meeting, Decision, Weekly status (daily/any scope) out of the 5 builtins
+    expect(items.length).toBe(4) // Meeting, Decision, Weekly status, Retro (daily/any scope) out of the 8 builtins
     ;(items[0] as HTMLElement).click()
     vi.advanceTimersByTime(500)
 
@@ -237,7 +237,7 @@ describe('renderDailyNotes', () => {
     fireInput(ed)
 
     const items = document.querySelectorAll('.tt-atref-item')
-    expect(items.length).toBe(3)
+    expect(items.length).toBe(4)
     ;(items[0] as HTMLElement).click()
     vi.advanceTimersByTime(500)
 

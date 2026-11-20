@@ -1,6 +1,6 @@
 import type { Template } from './types'
 import type { Locale } from './i18n'
-import { formatDate } from './i18n'
+import { formatDateWithWeekday } from './i18n'
 
 export interface TemplateCtx {
   dateIso: string
@@ -32,13 +32,17 @@ interface TemplateSeed {
   legacyBody?: { 'pt-BR': string; 'en-US': string }
 }
 
+// Light structure: one small title heading, then bold labels — alone on their line over a bullet list, or inline
+// with the text following on the same line. Follow-ups are `- [ ]` checkboxes: open ones in a person's notes are
+// what New 1:1 carries forward, so an agreed item written here reaches the next 1:1 on its own.
+// Documents seeded before this keep their headed bodies: built-ins already in a file are never rewritten.
 const SEEDS: TemplateSeed[] = [
   {
     name: { 'pt-BR': ONE_ON_ONE_SEED_NAME, 'en-US': ONE_ON_ONE_SEED_NAME },
     scope: 'personal',
     body: {
-      'pt-BR': '## 1:1 — {date}\n### Pendências anteriores\n{carryover}\n### Como está / energia\n- \n### Tópicos dela(e)\n- \n### Meus tópicos\n- \n### Feedback\n- \n### Ações combinadas\n- [ ] ',
-      'en-US': '## 1:1 — {date}\n### Carried over\n{carryover}\n### How are they / energy\n- \n### Their topics\n- \n### My topics\n- \n### Feedback\n- \n### Agreed actions\n- [ ] ',
+      'pt-BR': '### 1:1 — {date}\n**Pendências anteriores**\n{carryover}\n**Como está / energia**\n- \n**Tópicos dela(e)**\n- \n**Meus tópicos**\n- \n**Feedback (dado / recebido)**\n- \n**Ações combinadas**\n- [ ] ',
+      'en-US': '### 1:1 — {date}\n**Carried over**\n{carryover}\n**How are they / energy**\n- \n**Their topics**\n- \n**My topics**\n- \n**Feedback (given / received)**\n- \n**Agreed actions**\n- [ ] ',
     },
     legacyBody: {
       'pt-BR': '## 1:1 — {date}\n### Como está / energia\n- \n### Tópicos dela(e)\n- \n### Meus tópicos\n- \n### Feedback\n- \n### Ações combinadas\n- ',
@@ -46,35 +50,59 @@ const SEEDS: TemplateSeed[] = [
     },
   },
   {
+    name: { 'pt-BR': 'Primeiro 1:1', 'en-US': 'First 1:1' },
+    scope: 'personal',
+    body: {
+      'pt-BR': '### Primeiro 1:1 — {date}\n**Como gosta de trabalhar / se comunicar**\n- \n**O que motiva**\n- \n**Objetivos de carreira**\n- \n**O que precisa de mim**\n- \n**Algo que eu deva saber**\n- \n**Ações combinadas**\n- [ ] ',
+      'en-US': '### First 1:1 — {date}\n**How they like to work / communicate**\n- \n**What motivates them**\n- \n**Career goals**\n- \n**What they need from me**\n- \n**Anything I should know**\n- \n**Agreed actions**\n- [ ] ',
+    },
+  },
+  {
+    name: { 'pt-BR': 'Conversa de carreira', 'en-US': 'Career conversation' },
+    scope: 'personal',
+    body: {
+      'pt-BR': '### Conversa de carreira — {date}\n**Onde quer estar em 1–2 anos**\n- \n**Pontos fortes**\n- \n**Pontos a desenvolver**\n- \n**Oportunidades**\n- \n**Próximos passos**\n- [ ] ',
+      'en-US': '### Career conversation — {date}\n**Where they want to be in 1–2 years**\n- \n**Strengths**\n- \n**Growth areas**\n- \n**Opportunities**\n- \n**Next steps**\n- [ ] ',
+    },
+  },
+  {
     name: { 'pt-BR': 'Feedback (SBI)', 'en-US': 'Feedback (SBI)' },
     scope: 'personal',
     body: {
-      'pt-BR': '## Feedback — {date}\n**Situação:** \n**Comportamento:** \n**Impacto:** \n**Combinado:** ',
-      'en-US': '## Feedback — {date}\n**Situation:** \n**Behavior:** \n**Impact:** \n**Agreed:** ',
+      'pt-BR': '### Feedback — {date}\n**Situação:** \n**Comportamento:** \n**Impacto:** \n**Combinado**\n- [ ] ',
+      'en-US': '### Feedback — {date}\n**Situation:** \n**Behavior:** \n**Impact:** \n**Agreed**\n- [ ] ',
     },
   },
   {
     name: { 'pt-BR': 'Reunião', 'en-US': 'Meeting' },
-    scope: 'daily',
+    scope: 'any',
     body: {
-      'pt-BR': '## Reunião — {time}\n**Participantes:** \n### Pauta\n- \n### Decisões\n- \n### Ações (quem → o quê → quando)\n- ',
-      'en-US': '## Meeting — {time}\n**Attendees:** \n### Agenda\n- \n### Decisions\n- \n### Actions (who → what → when)\n- ',
+      'pt-BR': '### Reunião — {time}\n**Participantes:** \n**Pauta**\n- \n**Decisões**\n- \n**Ações (quem → o quê → quando)**\n- [ ] ',
+      'en-US': '### Meeting — {time}\n**Attendees:** \n**Agenda**\n- \n**Decisions**\n- \n**Actions (who → what → when)**\n- [ ] ',
     },
   },
   {
     name: { 'pt-BR': 'Decisão', 'en-US': 'Decision' },
     scope: 'any',
     body: {
-      'pt-BR': '## Decisão — {date}\n**Contexto:** \n**Opções consideradas:** \n**Decisão:** \n**Consequências / follow-up:** ',
-      'en-US': '## Decision — {date}\n**Context:** \n**Options considered:** \n**Decision:** \n**Consequences / follow-up:** ',
+      'pt-BR': '### Decisão — {date}\n**Contexto:** \n**Opções consideradas:** \n**Decisão:** \n**Decidido por:** \n**Revisar em:** \n**Consequências / follow-up**\n- [ ] ',
+      'en-US': '### Decision — {date}\n**Context:** \n**Options considered:** \n**Decision:** \n**Decided by:** \n**Revisit on:** \n**Consequences / follow-up**\n- [ ] ',
     },
   },
   {
     name: { 'pt-BR': 'Status semanal', 'en-US': 'Weekly status' },
     scope: 'daily',
     body: {
-      'pt-BR': '## Status semanal — {date}\n### Highlights\n- \n### Lowlights\n- \n### Riscos novos\n- \n### Próxima semana\n- ',
-      'en-US': '## Weekly status — {date}\n### Highlights\n- \n### Lowlights\n- \n### New risks\n- \n### Next week\n- ',
+      'pt-BR': '### Status semanal — {date}\n**Highlights**\n- \n**Lowlights**\n- \n**Milestones**\n- \n**Riscos novos**\n- \n**Próxima semana**\n- ',
+      'en-US': '### Weekly status — {date}\n**Highlights**\n- \n**Lowlights**\n- \n**Milestones**\n- \n**New risks**\n- \n**Next week**\n- ',
+    },
+  },
+  {
+    name: { 'pt-BR': 'Retro / Incidente', 'en-US': 'Retro / Incident' },
+    scope: 'any',
+    body: {
+      'pt-BR': '### Retro — {date}\n**O que aconteceu / linha do tempo**\n- \n**Impacto**\n- \n**O que foi bem**\n- \n**O que melhorar**\n- \n**Ações**\n- [ ] ',
+      'en-US': '### Retro — {date}\n**What happened / timeline**\n- \n**Impact**\n- \n**What went well**\n- \n**What to improve**\n- \n**Actions**\n- [ ] ',
     },
   },
 ]
@@ -114,17 +142,20 @@ export function upgradeLegacySeedBodies(templates: Template[]): Template[] {
   })
 }
 
+/** A line that only labels the section below it: a `#`–`###` heading, or a bold run alone on its line (`**Carried over**`). */
+const SECTION_LABEL = /^(#{1,3} |\*\*[^*]+\*\*:?\s*$)/
+
 function replaceAllOccurrences(s: string, search: string, value: string): string {
   return s.split(search).join(value)
 }
 
 /**
  * The placeholders a template body may use, English in every locale:
- * `{date}` (formatted for the document's locale), `{time}` (wall-clock),
+ * `{date}` (weekday and date, formatted for the document's locale), `{time}` (wall-clock),
  * `{person}` (the person whose notes page it is), `{team}` and `{carryover}`
  * (every open checklist item carried from the person note; when there are none, a line that
- * is only `{carryover}` is dropped together with the `#`–`###` heading right
- * above it, unless that heading is the first line; New 1:1 fills only the first
+ * is only `{carryover}` is dropped together with the `#`–`###` heading or
+ * lone bold label right above it, unless that heading is the first line; New 1:1 fills only the first
  * such line outside a code fence and clears every other `{carryover}`, see
  * `buildOneOnOne`). Documented for
  * users in `prefs_templates_placeholders_hint` and `help_templates_text`
@@ -134,7 +165,7 @@ function replaceAllOccurrences(s: string, search: string, value: string): string
  */
 export function resolveTemplate(body: string, ctx: TemplateCtx): string {
   let out = body
-  out = replaceAllOccurrences(out, '{date}', formatDate(ctx.dateIso, ctx.locale))
+  out = replaceAllOccurrences(out, '{date}', formatDateWithWeekday(ctx.dateIso, ctx.locale))
   out = replaceAllOccurrences(out, '{time}', ctx.time)
   out = replaceAllOccurrences(out, '{person}', ctx.personName ?? '')
   out = replaceAllOccurrences(out, '{team}', ctx.teamName ?? '')
@@ -146,8 +177,8 @@ export function resolveTemplate(body: string, ctx: TemplateCtx): string {
   lines.forEach((line, i) => {
     if (line !== '{carryover}') return
     dropped.add(i)
-    // Index 0 is the template's title, never a section heading to sweep away.
-    if (i > 1 && /^#{1,3} /.test(lines[i - 1]!)) dropped.add(i - 1)
+    // Index 0 is the template's title, never a section label to sweep away.
+    if (i > 1 && SECTION_LABEL.test(lines[i - 1]!)) dropped.add(i - 1)
   })
   return lines.filter((_, i) => !dropped.has(i)).join('\n').split('{carryover}').join('')
 }

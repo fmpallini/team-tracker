@@ -1,6 +1,6 @@
 import { createRichEditorBundle, createModuleEditor } from '../src/ui/rich-editor'
 import { createSearchIndex } from '../src/core/search'
-import { formatDate } from '../src/core/i18n'
+import { formatDateWithWeekday } from '../src/core/i18n'
 import type { ModuleCtx } from '../src/ui/panes'
 import type { Store } from '../src/core/store'
 import { createStore } from '../src/core/store'
@@ -160,7 +160,7 @@ describe('createModuleEditor', () => {
     store.update((d) => { d.teams[0]!.name = 'Beta' })
     pick(editorEl, 'AnyTpl')
     vi.advanceTimersByTime(500)
-    expect(bundle.editor.getMd()).toContain(`T:Beta P:Bia D:${formatDate('2026-07-24', 'en-US')}`)
+    expect(bundle.editor.getMd()).toContain(`T:Beta P:Bia D:${formatDateWithWeekday('2026-07-24', 'en-US')}`)
     bundle.dispose()
   })
 
@@ -177,7 +177,7 @@ describe('createModuleEditor', () => {
     const { editorEl, bundle } = mount()
     pick(editorEl, 'AnyTpl')
     vi.advanceTimersByTime(500)
-    expect(bundle.editor.getMd()).toContain(`D:${formatDate('2026-10-14', 'en-US')}`)
+    expect(bundle.editor.getMd()).toContain(`D:${formatDateWithWeekday('2026-10-14', 'en-US')}`)
     bundle.dispose()
   })
 

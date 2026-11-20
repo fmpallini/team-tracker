@@ -168,7 +168,7 @@ describe('renderGeneralNotes', () => {
     fireInput(editorEl(container))
 
     const items = document.querySelectorAll('.tt-atref-item')
-    expect(items.length).toBe(1) // only the single scope:'any' builtin (Decision) out of the 5 builtins
+    expect(items.length).toBe(3) // only the scope:'any' builtins (Meeting, Decision, Retro) out of the 8 builtins
     ;(items[0] as HTMLElement).click()
     vi.advanceTimersByTime(500)
 

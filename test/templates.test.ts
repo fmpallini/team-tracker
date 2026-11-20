@@ -1,17 +1,17 @@
 import { isOneOnOneCandidate, builtinTemplates, resolveTemplate, reseedBuiltinTemplates, upgradeLegacySeedBodies, ONE_ON_ONE_SEED_NAME } from '../src/core/templates'
 import { createEmptyDocument } from '../src/core/document'
 
-test('five builtins with scopes', () => {
+test('eight builtins with scopes', () => {
   const ts = builtinTemplates('pt-BR')
-  expect(ts).toHaveLength(5)
-  expect(ts.map(t => t.scope).sort()).toEqual(['any', 'daily', 'daily', 'personal', 'personal'])
-  expect(new Set(ts.map(t => t.id)).size).toBe(5)
+  expect(ts).toHaveLength(8)
+  expect(ts.map(t => t.scope).sort()).toEqual(['any', 'any', 'any', 'daily', 'personal', 'personal', 'personal', 'personal'])
+  expect(new Set(ts.map(t => t.id)).size).toBe(8)
 })
 
 test('resolveTemplate fills the English placeholders', () => {
   const out = resolveTemplate('## 1:1 — {date} {time} {person} {team}',
     { dateIso: '2026-07-02', time: '14:30', personName: 'Ana', teamName: 'Alpha', locale: 'pt-BR' })
-  expect(out).toBe('## 1:1 — 02/07/2026 14:30 Ana Alpha')
+  expect(out).toBe('## 1:1 — Qui, 02/07/2026 14:30 Ana Alpha')
 })
 
 test('the old Portuguese placeholders are no longer recognised', () => {
@@ -23,10 +23,10 @@ test('{time} is now the wall-clock time, not the team name', () => {
   expect(resolveTemplate('{time}', { dateIso: '2026-07-02', time: '9:05 AM', teamName: 'Alpha', locale: 'en-US' })).toBe('9:05 AM')
 })
 
-test('placeholders resolve the same in either locale; only the date format follows the locale', () => {
+test('placeholders resolve the same in either locale; only the weekday and date format follow the locale', () => {
   const ctx = { dateIso: '2026-07-02', time: '14:30', locale: 'en-US' as const }
-  expect(resolveTemplate('{date}', ctx)).toBe('07/02/2026')
-  expect(resolveTemplate('{date}', { ...ctx, locale: 'pt-BR' })).toBe('02/07/2026')
+  expect(resolveTemplate('{date}', ctx)).toBe('Thu, 07/02/2026')
+  expect(resolveTemplate('{date}', { ...ctx, locale: 'pt-BR' })).toBe('Qui, 02/07/2026')
 })
 
 test('no built-in template, in either locale, still uses a Portuguese placeholder', () => {
@@ -36,7 +36,7 @@ test('no built-in template, in either locale, still uses a Portuguese placeholde
 })
 
 test('empty document seeds builtins', () => {
-  expect(createEmptyDocument('pt-BR').templates).toHaveLength(5)
+  expect(createEmptyDocument('pt-BR').templates).toHaveLength(8)
 })
 
 test('reseedBuiltinTemplates swaps an untouched builtin to the new locale', () => {
@@ -64,7 +64,7 @@ test('reseedBuiltinTemplates leaves a user-authored template untouched', () => {
   const ts = builtinTemplates('en-US')
   const withCustom = [...ts, { id: 'custom-1', name: 'My own template', scope: 'any' as const, body: 'whatever I want' }]
   const reseeded = reseedBuiltinTemplates(withCustom, 'en-US', 'pt-BR')
-  expect(reseeded.find(t => t.id === 'custom-1')).toEqual(withCustom[5])
+  expect(reseeded.find(t => t.id === 'custom-1')).toEqual(withCustom[8])
 })
 
 const LEGACY_EN = '## 1:1 — {date}\n### How are they / energy\n- \n### Their topics\n- \n### My topics\n- \n### Feedback\n- \n### Agreed actions\n- '
@@ -77,11 +77,11 @@ test('the 1:1 seed name is exported', () => {
 
 test('new 1:1 seed (en-US) is the spec body', () => {
   expect(builtinTemplates('en-US').find(t => t.name === '1:1')!.body).toBe(
-    '## 1:1 — {date}\n### Carried over\n{carryover}\n### How are they / energy\n- \n### Their topics\n- \n### My topics\n- \n### Feedback\n- \n### Agreed actions\n- [ ] ')
+    '### 1:1 — {date}\n**Carried over**\n{carryover}\n**How are they / energy**\n- \n**Their topics**\n- \n**My topics**\n- \n**Feedback (given / received)**\n- \n**Agreed actions**\n- [ ] ')
 })
 
-test('pt-BR seed uses "### Pendências anteriores"', () => {
-  expect(builtinTemplates('pt-BR').find(t => t.name === '1:1')!.body).toContain('### Pendências anteriores\n{carryover}\n')
+test('pt-BR seed labels the carried section "Pendências anteriores"', () => {
+  expect(builtinTemplates('pt-BR').find(t => t.name === '1:1')!.body).toContain('**Pendências anteriores**\n{carryover}\n')
 })
 
 test('{carryover} fills in place', () => {
@@ -97,6 +97,15 @@ test('empty {carryover} never removes the first line', () => {
   expect(resolveTemplate('### C\n{carryover}\n- x', ctx)).toBe('### C\n- x')
 })
 
+test('empty {carryover} removes a lone bold label above it', () => {
+  expect(resolveTemplate('## A\n**C**\n{carryover}\n**B:** x', ctx)).toBe('## A\n**B:** x')
+  expect(resolveTemplate('## A\n**C:**\n{carryover}\n- x', ctx)).toBe('## A\n- x')
+})
+
+test('empty {carryover} under a bold label with text keeps that line', () => {
+  expect(resolveTemplate('## A\n**C:** note\n{carryover}\n- x', ctx)).toBe('## A\n**C:** note\n- x')
+})
+
 test('empty {carryover} under a non-heading line keeps that line', () => {
   expect(resolveTemplate('## A\ntext\n{carryover}\n- x', ctx)).toBe('## A\ntext\n- x')
 })
@@ -107,7 +116,7 @@ test('empty {carryover} inline stays empty text, nothing removed', () => {
 
 test('the rendered 1:1 seed with no carry-over drops the Carried over section', () => {
   const body = builtinTemplates('en-US').find(t => t.name === '1:1')!.body
-  expect(resolveTemplate(body, ctx)).toBe('## 1:1 — 07/02/2026\n### How are they / energy\n- \n### Their topics\n- \n### My topics\n- \n### Feedback\n- \n### Agreed actions\n- [ ] ')
+  expect(resolveTemplate(body, ctx)).toBe('### 1:1 — Thu, 07/02/2026\n**How are they / energy**\n- \n**Their topics**\n- \n**My topics**\n- \n**Feedback (given / received)**\n- \n**Agreed actions**\n- [ ] ')
 })
 
 test('reseed recognizes the legacy 1:1 body', () => {
