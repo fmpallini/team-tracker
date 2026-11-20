@@ -13,12 +13,12 @@ export interface TemplateCtx {
 }
 
 /**
- * Whether a template can start a person's 1:1: a daily-note template makes no sense there. One rule for the
- * Preferences select (which lists only these) and for New 1:1 (which ignores a chosen template that no longer
- * qualifies, so the select's "None" is never a lie).
+ * Whether a template can start a person's 1:1: only one scoped to person notes — a Shared ('any') template (Meeting,
+ * Decision, Retro) is not a 1:1. One rule for the Preferences select (which lists only these) and for New 1:1 (which ignores a
+ * chosen template that no longer qualifies, so the select's "None" is never a lie).
  */
 export function isOneOnOneCandidate(tpl: Template): boolean {
-  return tpl.scope !== 'daily'
+  return tpl.scope === 'personal'
 }
 
 /** Name of the built-in 1:1 template, the one the 1:1 flow looks up. */
@@ -32,8 +32,8 @@ interface TemplateSeed {
   body: Localized
   /**
    * Every body this seed shipped with before its current one, oldest first. A template still holding one word for
-   * word (under the seed's name) is an untouched built-in: a locale switch (`reseedBuiltinTemplates`) and Restore
-   * defaults (`refreshBuiltinBodies`) move it to the current body. Nothing else rewrites a template on its own.
+   * word (under the seed's name) is an untouched built-in, so a locale switch (`reseedBuiltinTemplates`) moves it to
+   * the current body. Nothing else rewrites a template on its own; Restore defaults does on request.
    */
   previousBodies?: Localized[]
 }
@@ -50,6 +50,14 @@ const ONE_ON_ONE_BEFORE_CARRYOVER: Localized = {
 // Documents seeded before this keep their headed bodies: built-ins already in a file are never rewritten.
 const SEEDS: TemplateSeed[] = [
   {
+    name: { 'pt-BR': 'Primeiro 1:1', 'en-US': 'First 1:1' },
+    scope: 'personal',
+    body: {
+      'pt-BR': '### Primeiro 1:1 — {date}\n**Como gosta de trabalhar / se comunicar**\n- \n**O que motiva**\n- \n**Objetivos de carreira**\n- \n**O que precisa de mim**\n- \n**Algo que eu deva saber**\n- \n**Ações combinadas**\n- [ ] ',
+      'en-US': '### First 1:1 — {date}\n**How they like to work / communicate**\n- \n**What motivates them**\n- \n**Career goals**\n- \n**What they need from me**\n- \n**Anything I should know**\n- \n**Agreed actions**\n- [ ] ',
+    },
+  },
+  {
     name: { 'pt-BR': ONE_ON_ONE_SEED_NAME, 'en-US': ONE_ON_ONE_SEED_NAME },
     scope: 'personal',
     body: {
@@ -65,22 +73,6 @@ const SEEDS: TemplateSeed[] = [
     ],
   },
   {
-    name: { 'pt-BR': 'Primeiro 1:1', 'en-US': 'First 1:1' },
-    scope: 'personal',
-    body: {
-      'pt-BR': '### Primeiro 1:1 — {date}\n**Como gosta de trabalhar / se comunicar**\n- \n**O que motiva**\n- \n**Objetivos de carreira**\n- \n**O que precisa de mim**\n- \n**Algo que eu deva saber**\n- \n**Ações combinadas**\n- [ ] ',
-      'en-US': '### First 1:1 — {date}\n**How they like to work / communicate**\n- \n**What motivates them**\n- \n**Career goals**\n- \n**What they need from me**\n- \n**Anything I should know**\n- \n**Agreed actions**\n- [ ] ',
-    },
-  },
-  {
-    name: { 'pt-BR': 'Conversa de carreira', 'en-US': 'Career conversation' },
-    scope: 'personal',
-    body: {
-      'pt-BR': '### Conversa de carreira — {date}\n**Onde quer estar em 1–2 anos**\n- \n**Pontos fortes**\n- \n**Pontos a desenvolver**\n- \n**Oportunidades**\n- \n**Próximos passos**\n- [ ] ',
-      'en-US': '### Career conversation — {date}\n**Where they want to be in 1–2 years**\n- \n**Strengths**\n- \n**Growth areas**\n- \n**Opportunities**\n- \n**Next steps**\n- [ ] ',
-    },
-  },
-  {
     name: { 'pt-BR': 'Feedback (SBI)', 'en-US': 'Feedback (SBI)' },
     scope: 'personal',
     body: {
@@ -91,6 +83,14 @@ const SEEDS: TemplateSeed[] = [
       'pt-BR': '## Feedback — {date}\n**Situação:** \n**Comportamento:** \n**Impacto:** \n**Combinado:** ',
       'en-US': '## Feedback — {date}\n**Situation:** \n**Behavior:** \n**Impact:** \n**Agreed:** ',
     }],
+  },
+  {
+    name: { 'pt-BR': 'Conversa de carreira', 'en-US': 'Career conversation' },
+    scope: 'personal',
+    body: {
+      'pt-BR': '### Conversa de carreira — {date}\n**Onde quer estar em 1–2 anos**\n- \n**Pontos fortes**\n- \n**Pontos a desenvolver**\n- \n**Oportunidades**\n- \n**Próximos passos**\n- [ ] ',
+      'en-US': '### Career conversation — {date}\n**Where they want to be in 1–2 years**\n- \n**Strengths**\n- \n**Growth areas**\n- \n**Opportunities**\n- \n**Next steps**\n- [ ] ',
+    },
   },
   {
     name: { 'pt-BR': 'Reunião', 'en-US': 'Meeting' },
@@ -105,6 +105,18 @@ const SEEDS: TemplateSeed[] = [
     }],
   },
   {
+    name: { 'pt-BR': 'Status semanal', 'en-US': 'Weekly status' },
+    scope: 'any',
+    body: {
+      'pt-BR': '### Status semanal — {date}\n**Highlights**\n- \n**Lowlights**\n- \n**Milestones**\n- \n**Riscos novos**\n- \n**Próxima semana**\n- ',
+      'en-US': '### Weekly status — {date}\n**Highlights**\n- \n**Lowlights**\n- \n**Milestones**\n- \n**New risks**\n- \n**Next week**\n- ',
+    },
+    previousBodies: [{
+      'pt-BR': '## Status semanal — {date}\n### Highlights\n- \n### Lowlights\n- \n### Riscos novos\n- \n### Próxima semana\n- ',
+      'en-US': '## Weekly status — {date}\n### Highlights\n- \n### Lowlights\n- \n### New risks\n- \n### Next week\n- ',
+    }],
+  },
+  {
     name: { 'pt-BR': 'Decisão', 'en-US': 'Decision' },
     scope: 'any',
     body: {
@@ -114,18 +126,6 @@ const SEEDS: TemplateSeed[] = [
     previousBodies: [{
       'pt-BR': '## Decisão — {date}\n**Contexto:** \n**Opções consideradas:** \n**Decisão:** \n**Consequências / follow-up:** ',
       'en-US': '## Decision — {date}\n**Context:** \n**Options considered:** \n**Decision:** \n**Consequences / follow-up:** ',
-    }],
-  },
-  {
-    name: { 'pt-BR': 'Status semanal', 'en-US': 'Weekly status' },
-    scope: 'daily',
-    body: {
-      'pt-BR': '### Status semanal — {date}\n**Highlights**\n- \n**Lowlights**\n- \n**Milestones**\n- \n**Riscos novos**\n- \n**Próxima semana**\n- ',
-      'en-US': '### Weekly status — {date}\n**Highlights**\n- \n**Lowlights**\n- \n**Milestones**\n- \n**New risks**\n- \n**Next week**\n- ',
-    },
-    previousBodies: [{
-      'pt-BR': '## Status semanal — {date}\n### Highlights\n- \n### Lowlights\n- \n### Riscos novos\n- \n### Próxima semana\n- ',
-      'en-US': '## Weekly status — {date}\n### Highlights\n- \n### Lowlights\n- \n### New risks\n- \n### Next week\n- ',
     }],
   },
   {
@@ -159,7 +159,7 @@ export function reseedBuiltinTemplates(templates: Template[], oldLocale: Locale,
 /**
  * Schema 20's migration: a 1:1 seed still holding its body from before `{carryover}` moves to the current 1:1 body,
  * in the locale it was written in. Only that exact body moves; later built-in changes reach a file only through
- * Restore defaults (`refreshBuiltinBodies`).
+ * Restore defaults, which replaces the whole set with `builtinTemplates`.
  */
 export function upgradeLegacySeedBodies(templates: Template[]): Template[] {
   const oneOnOne = SEEDS.find((s) => s.name['en-US'] === ONE_ON_ONE_SEED_NAME)!
@@ -171,22 +171,6 @@ export function upgradeLegacySeedBodies(templates: Template[]): Template[] {
   })
 }
 
-/**
- * Restore defaults: a built-in still holding an earlier version of its body word for word, under the seed's name in
- * that same locale, moves to the current body. An edited or renamed one is the user's and stays as is.
- */
-export function refreshBuiltinBodies(templates: Template[]): Template[] {
-  return templates.map((tpl) => {
-    for (const seed of SEEDS) {
-      for (const locale of ['pt-BR', 'en-US'] as const) {
-        if (seed.name[locale] === tpl.name && seed.previousBodies?.some((b) => b[locale] === tpl.body)) {
-          return { ...tpl, body: seed.body[locale] }
-        }
-      }
-    }
-    return tpl
-  })
-}
 
 /** A line that only labels the section below it: a `#`–`###` heading, or a bold run alone on its line (`**Carried over**`). */
 const SECTION_LABEL = /^(#{1,3} |\*\*[^*]+\*\*:?\s*$)/

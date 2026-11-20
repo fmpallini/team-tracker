@@ -70,6 +70,12 @@ export interface Team {
 }
 export interface Template {
   id: string; name: string
+  /**
+   * Where the `/` picker offers it, set by each editor's `templateScopes`: 'personal' in person notes (and the only
+   * scope New 1:1 accepts), 'daily' in daily notes, 'any' (labelled Shared) in daily and general notes, task notes and risk and
+   * milestone follow-ups. Described for users in `help_templates_text` and `prefs_templates_scope_hint` (core/i18n.ts)
+   * — keep them in step.
+   */
   scope: 'personal' | 'daily' | 'any'; body: string
 }
 export type ModuleRef =

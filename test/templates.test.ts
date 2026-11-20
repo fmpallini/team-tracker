@@ -1,10 +1,10 @@
-import { isOneOnOneCandidate, builtinTemplates, resolveTemplate, reseedBuiltinTemplates, upgradeLegacySeedBodies, refreshBuiltinBodies, ONE_ON_ONE_SEED_NAME } from '../src/core/templates'
+import { isOneOnOneCandidate, builtinTemplates, resolveTemplate, reseedBuiltinTemplates, upgradeLegacySeedBodies, ONE_ON_ONE_SEED_NAME } from '../src/core/templates'
 import { createEmptyDocument } from '../src/core/document'
 
 test('eight builtins with scopes', () => {
   const ts = builtinTemplates('pt-BR')
   expect(ts).toHaveLength(8)
-  expect(ts.map(t => t.scope).sort()).toEqual(['any', 'any', 'any', 'daily', 'personal', 'personal', 'personal', 'personal'])
+  expect(ts.map(t => t.scope).sort()).toEqual(['any', 'any', 'any', 'any', 'personal', 'personal', 'personal', 'personal'])
   expect(new Set(ts.map(t => t.id)).size).toBe(8)
 })
 
@@ -42,22 +42,24 @@ test('empty document seeds builtins', () => {
 test('reseedBuiltinTemplates swaps an untouched builtin to the new locale', () => {
   const ts = builtinTemplates('en-US')
   const reseeded = reseedBuiltinTemplates(ts, 'en-US', 'pt-BR')
-  const oneOnOne = reseeded.find(t => t.id === ts[0]!.id)!
+  const i = ts.findIndex(t => t.name === '1:1')
+  const oneOnOne = reseeded.find(t => t.id === ts[i]!.id)!
   expect(oneOnOne.name).toBe('1:1')
   expect(oneOnOne.body).toContain('Como está / energia')
   // id, scope, and array position are preserved
   expect(reseeded.map(t => t.id)).toEqual(ts.map(t => t.id))
-  expect(reseeded[0]!.scope).toBe(ts[0]!.scope)
+  expect(reseeded[i]!.scope).toBe(ts[i]!.scope)
 })
 
 test('reseedBuiltinTemplates leaves an edited template untouched', () => {
   const ts = builtinTemplates('en-US')
-  const edited = ts.map((t, i) => (i === 0 ? { ...t, body: 'my custom body' } : t))
+  const edited = ts.map(t => (t.name === '1:1' ? { ...t, body: 'my custom body' } : t))
   const reseeded = reseedBuiltinTemplates(edited, 'en-US', 'pt-BR')
-  expect(reseeded[0]!.name).toBe('1:1') // name untouched too — partial edit means "leave the whole entry alone"
-  expect(reseeded[0]!.body).toBe('my custom body')
-  // the other 4, still exact matches, do get swapped
-  expect(reseeded[1]!.body).not.toBe(ts[1]!.body)
+  const oneOnOne = reseeded.find(t => t.id === ts.find(s => s.name === '1:1')!.id)!
+  expect(oneOnOne.name).toBe('1:1') // name untouched too — partial edit means "leave the whole entry alone"
+  expect(oneOnOne.body).toBe('my custom body')
+  // the others, still exact matches, do get swapped
+  expect(reseeded[0]!.body).not.toBe(ts[0]!.body)
 })
 
 test('reseedBuiltinTemplates leaves a user-authored template untouched', () => {
@@ -137,43 +139,15 @@ test('upgradeLegacySeedBodies upgrades only exact legacy bodies', () => {
 
 // Meeting as 3.7.4 shipped it, before the bold-label restyle.
 const MEETING_374_EN = '## Meeting — {time}\n**Attendees:** \n### Agenda\n- \n### Decisions\n- \n### Actions (who → what → when)\n- '
-const MEETING_374_PT = '## Reunião — {time}\n**Participantes:** \n### Pauta\n- \n### Decisões\n- \n### Ações (quem → o quê → quando)\n- '
 
 test('upgradeLegacySeedBodies leaves later built-in versions alone (only Restore defaults moves them)', () => {
   const tpl = { id: 'm', name: 'Meeting', scope: 'daily' as const, body: MEETING_374_EN }
   expect(upgradeLegacySeedBodies([tpl])[0]).toBe(tpl)
 })
 
-test('refreshBuiltinBodies moves an untouched earlier built-in to the current body, in its own locale', () => {
-  const [en, pt] = refreshBuiltinBodies([
-    { id: 'e', name: 'Meeting', scope: 'daily', body: MEETING_374_EN },
-    { id: 'p', name: 'Reunião', scope: 'daily', body: MEETING_374_PT },
-  ])
-  expect(en).toEqual({ id: 'e', name: 'Meeting', scope: 'daily', body: builtinTemplates('en-US').find(t => t.name === 'Meeting')!.body })
-  expect(pt!.body).toBe(builtinTemplates('pt-BR').find(t => t.name === 'Reunião')!.body)
-})
-
-test('refreshBuiltinBodies covers every earlier 1:1 body', () => {
-  const current = builtinTemplates('en-US').find(t => t.name === '1:1')!.body
-  const headed = '## 1:1 — {date}\n### Carried over\n{carryover}\n### How are they / energy\n- \n### Their topics\n- \n### My topics\n- \n### Feedback\n- \n### Agreed actions\n- [ ] '
-  for (const body of [LEGACY_EN, headed]) {
-    expect(refreshBuiltinBodies([{ id: 'a', name: '1:1', scope: 'personal', body }])[0]!.body).toBe(current)
-  }
-})
-
-test('refreshBuiltinBodies leaves edited, renamed and current templates alone', () => {
-  const edited = { id: 'x', name: 'Meeting', scope: 'daily' as const, body: MEETING_374_EN + 'mine' }
-  const renamed = { id: 'y', name: 'Team sync', scope: 'daily' as const, body: MEETING_374_EN }
-  const current = builtinTemplates('en-US')[0]!
-  const out = refreshBuiltinBodies([edited, renamed, current])
-  expect(out[0]).toBe(edited)
-  expect(out[1]).toBe(renamed)
-  expect(out[2]).toBe(current)
-})
-
-test('isOneOnOneCandidate excludes only daily-scoped templates', () => {
+test('isOneOnOneCandidate accepts only person-note templates', () => {
   const tpl = (scope: 'personal' | 'daily' | 'any') => ({ id: 'x', name: 'x', scope, body: '' })
   expect(isOneOnOneCandidate(tpl('personal'))).toBe(true)
-  expect(isOneOnOneCandidate(tpl('any'))).toBe(true)
+  expect(isOneOnOneCandidate(tpl('any'))).toBe(false)
   expect(isOneOnOneCandidate(tpl('daily'))).toBe(false)
 })

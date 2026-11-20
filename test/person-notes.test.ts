@@ -382,10 +382,13 @@ describe('renderPersonNotes', () => {
 
 const PERSON_LOC: Loc = { teamId: 'T1', ref: { kind: 'person', personId: 'mem-1', group: 'members' } }
 
-test('the notes editor offers the "personal" and "any" templates', () => {
+test('the notes editor offers only the "personal" templates', () => {
   const { container, store, pm } = setup(makeTeam())
   render(container, PERSON_LOC, store, pm)
-  expect(offeredTemplates(editorEl(container))).toEqual(store.doc.templates.filter((tpl) => tpl.scope === 'personal' || tpl.scope === 'any').map((tpl) => tpl.name))
+  const personal = store.doc.templates.filter((tpl) => tpl.scope === 'personal').map((tpl) => tpl.name)
+  expect(personal.length).toBeGreaterThan(0)
+  expect(personal.length).toBeLessThan(store.doc.templates.length) // the Any built-ins exist but are not offered
+  expect(offeredTemplates(editorEl(container))).toEqual(personal)
 })
 
 test('a template\'s {person} uses the person\'s current name after a rename', () => {

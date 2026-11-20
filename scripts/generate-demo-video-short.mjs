@@ -152,7 +152,8 @@ async function showTemplate(page) {
   const personEditor = page.locator('.tt-person-notes .editor').first()
   await click(page, personEditor)
   await personEditor.pressSequentially('/', { delay: 40 })
-  const tplItem = page.locator('.tt-atref-dropdown .tt-atref-item', { hasText: '1:1' }).first()
+  // Exact name: "First 1:1" also contains "1:1" and is listed first.
+  const tplItem = page.locator('.tt-atref-dropdown .tt-atref-item', { hasText: /^1:1$/ })
   await expect(tplItem).toBeVisible({ timeout: 5000 })
   await pause(page, 250)
   await click(page, tplItem)

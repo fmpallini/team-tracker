@@ -145,7 +145,8 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
 
   const bundle = createModuleEditor(ctx, teamId, {
     initialMd: person.notes,
-    templateScopes: ['personal', 'any'],
+    // Person notes are for the person: Shared templates (scope 'any': Meeting, Decision, …) belong to the shared notes and items.
+    templateScopes: ['personal'],
     personName: () => findPerson()?.name,
     onEscape: () => focusPaneBar(container),
     onChange: (md) => {
