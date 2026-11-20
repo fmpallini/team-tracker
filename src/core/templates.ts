@@ -24,12 +24,24 @@ export function isOneOnOneCandidate(tpl: Template): boolean {
 /** Name of the built-in 1:1 template, the one the 1:1 flow looks up. */
 export const ONE_ON_ONE_SEED_NAME = '1:1'
 
+type Localized = { 'pt-BR': string; 'en-US': string }
+
 interface TemplateSeed {
-  name: { 'pt-BR': string; 'en-US': string }
+  name: Localized
   scope: Template['scope']
-  body: { 'pt-BR': string; 'en-US': string }
-  /** Bodies this seed shipped with before its current one. Reseed and `upgradeLegacySeedBodies` treat them as untouched. */
-  legacyBody?: { 'pt-BR': string; 'en-US': string }
+  body: Localized
+  /**
+   * Every body this seed shipped with before its current one, oldest first. A template still holding one word for
+   * word (under the seed's name) is an untouched built-in: a locale switch (`reseedBuiltinTemplates`) and Restore
+   * defaults (`refreshBuiltinBodies`) move it to the current body. Nothing else rewrites a template on its own.
+   */
+  previousBodies?: Localized[]
+}
+
+/** The 1:1 seed before `{carryover}` (up to schema 19): the one body schema 20's migration upgrades on open. */
+const ONE_ON_ONE_BEFORE_CARRYOVER: Localized = {
+  'pt-BR': '## 1:1 — {date}\n### Como está / energia\n- \n### Tópicos dela(e)\n- \n### Meus tópicos\n- \n### Feedback\n- \n### Ações combinadas\n- ',
+  'en-US': '## 1:1 — {date}\n### How are they / energy\n- \n### Their topics\n- \n### My topics\n- \n### Feedback\n- \n### Agreed actions\n- ',
 }
 
 // Light structure: one small title heading, then bold labels — alone on their line over a bullet list, or inline
@@ -44,10 +56,13 @@ const SEEDS: TemplateSeed[] = [
       'pt-BR': '### 1:1 — {date}\n**Pendências anteriores**\n{carryover}\n**Como está / energia**\n- \n**Tópicos dela(e)**\n- \n**Meus tópicos**\n- \n**Feedback (dado / recebido)**\n- \n**Ações combinadas**\n- [ ] ',
       'en-US': '### 1:1 — {date}\n**Carried over**\n{carryover}\n**How are they / energy**\n- \n**Their topics**\n- \n**My topics**\n- \n**Feedback (given / received)**\n- \n**Agreed actions**\n- [ ] ',
     },
-    legacyBody: {
-      'pt-BR': '## 1:1 — {date}\n### Como está / energia\n- \n### Tópicos dela(e)\n- \n### Meus tópicos\n- \n### Feedback\n- \n### Ações combinadas\n- ',
-      'en-US': '## 1:1 — {date}\n### How are they / energy\n- \n### Their topics\n- \n### My topics\n- \n### Feedback\n- \n### Agreed actions\n- ',
-    },
+    previousBodies: [
+      ONE_ON_ONE_BEFORE_CARRYOVER,
+      {
+        'pt-BR': '## 1:1 — {date}\n### Pendências anteriores\n{carryover}\n### Como está / energia\n- \n### Tópicos dela(e)\n- \n### Meus tópicos\n- \n### Feedback\n- \n### Ações combinadas\n- [ ] ',
+        'en-US': '## 1:1 — {date}\n### Carried over\n{carryover}\n### How are they / energy\n- \n### Their topics\n- \n### My topics\n- \n### Feedback\n- \n### Agreed actions\n- [ ] ',
+      },
+    ],
   },
   {
     name: { 'pt-BR': 'Primeiro 1:1', 'en-US': 'First 1:1' },
@@ -72,6 +87,10 @@ const SEEDS: TemplateSeed[] = [
       'pt-BR': '### Feedback — {date}\n**Situação:** \n**Comportamento:** \n**Impacto:** \n**Combinado**\n- [ ] ',
       'en-US': '### Feedback — {date}\n**Situation:** \n**Behavior:** \n**Impact:** \n**Agreed**\n- [ ] ',
     },
+    previousBodies: [{
+      'pt-BR': '## Feedback — {date}\n**Situação:** \n**Comportamento:** \n**Impacto:** \n**Combinado:** ',
+      'en-US': '## Feedback — {date}\n**Situation:** \n**Behavior:** \n**Impact:** \n**Agreed:** ',
+    }],
   },
   {
     name: { 'pt-BR': 'Reunião', 'en-US': 'Meeting' },
@@ -80,6 +99,10 @@ const SEEDS: TemplateSeed[] = [
       'pt-BR': '### Reunião — {time}\n**Participantes:** \n**Pauta**\n- \n**Decisões**\n- \n**Ações (quem → o quê → quando)**\n- [ ] ',
       'en-US': '### Meeting — {time}\n**Attendees:** \n**Agenda**\n- \n**Decisions**\n- \n**Actions (who → what → when)**\n- [ ] ',
     },
+    previousBodies: [{
+      'pt-BR': '## Reunião — {time}\n**Participantes:** \n### Pauta\n- \n### Decisões\n- \n### Ações (quem → o quê → quando)\n- ',
+      'en-US': '## Meeting — {time}\n**Attendees:** \n### Agenda\n- \n### Decisions\n- \n### Actions (who → what → when)\n- ',
+    }],
   },
   {
     name: { 'pt-BR': 'Decisão', 'en-US': 'Decision' },
@@ -88,6 +111,10 @@ const SEEDS: TemplateSeed[] = [
       'pt-BR': '### Decisão — {date}\n**Contexto:** \n**Opções consideradas:** \n**Decisão:** \n**Decidido por:** \n**Revisar em:** \n**Consequências / follow-up**\n- [ ] ',
       'en-US': '### Decision — {date}\n**Context:** \n**Options considered:** \n**Decision:** \n**Decided by:** \n**Revisit on:** \n**Consequences / follow-up**\n- [ ] ',
     },
+    previousBodies: [{
+      'pt-BR': '## Decisão — {date}\n**Contexto:** \n**Opções consideradas:** \n**Decisão:** \n**Consequências / follow-up:** ',
+      'en-US': '## Decision — {date}\n**Context:** \n**Options considered:** \n**Decision:** \n**Consequences / follow-up:** ',
+    }],
   },
   {
     name: { 'pt-BR': 'Status semanal', 'en-US': 'Weekly status' },
@@ -96,6 +123,10 @@ const SEEDS: TemplateSeed[] = [
       'pt-BR': '### Status semanal — {date}\n**Highlights**\n- \n**Lowlights**\n- \n**Milestones**\n- \n**Riscos novos**\n- \n**Próxima semana**\n- ',
       'en-US': '### Weekly status — {date}\n**Highlights**\n- \n**Lowlights**\n- \n**Milestones**\n- \n**New risks**\n- \n**Next week**\n- ',
     },
+    previousBodies: [{
+      'pt-BR': '## Status semanal — {date}\n### Highlights\n- \n### Lowlights\n- \n### Riscos novos\n- \n### Próxima semana\n- ',
+      'en-US': '## Weekly status — {date}\n### Highlights\n- \n### Lowlights\n- \n### New risks\n- \n### Next week\n- ',
+    }],
   },
   {
     name: { 'pt-BR': 'Retro / Incidente', 'en-US': 'Retro / Incident' },
@@ -119,23 +150,38 @@ export function builtinTemplates(locale: Locale): Template[] {
 export function reseedBuiltinTemplates(templates: Template[], oldLocale: Locale, newLocale: Locale): Template[] {
   return templates.map((tpl) => {
     const seed = SEEDS.find((s) => s.name[oldLocale] === tpl.name
-      && (s.body[oldLocale] === tpl.body || s.legacyBody?.[oldLocale] === tpl.body))
+      && (s.body[oldLocale] === tpl.body || !!s.previousBodies?.some((b) => b[oldLocale] === tpl.body)))
     if (!seed) return tpl
     return { ...tpl, name: seed.name[newLocale], body: seed.body[newLocale] }
   })
 }
 
 /**
- * Brings a template still holding an earlier built-in body (`legacyBody`) up to
- * the current one, in the locale it was written in. Only an exact match moves:
- * an edited body is the user's and stays as is.
+ * Schema 20's migration: a 1:1 seed still holding its body from before `{carryover}` moves to the current 1:1 body,
+ * in the locale it was written in. Only that exact body moves; later built-in changes reach a file only through
+ * Restore defaults (`refreshBuiltinBodies`).
  */
 export function upgradeLegacySeedBodies(templates: Template[]): Template[] {
+  const oneOnOne = SEEDS.find((s) => s.name['en-US'] === ONE_ON_ONE_SEED_NAME)!
+  return templates.map((tpl) => {
+    for (const locale of ['pt-BR', 'en-US'] as const) {
+      if (ONE_ON_ONE_BEFORE_CARRYOVER[locale] === tpl.body) return { ...tpl, body: oneOnOne.body[locale] }
+    }
+    return tpl
+  })
+}
+
+/**
+ * Restore defaults: a built-in still holding an earlier version of its body word for word, under the seed's name in
+ * that same locale, moves to the current body. An edited or renamed one is the user's and stays as is.
+ */
+export function refreshBuiltinBodies(templates: Template[]): Template[] {
   return templates.map((tpl) => {
     for (const seed of SEEDS) {
-      if (!seed.legacyBody) continue
       for (const locale of ['pt-BR', 'en-US'] as const) {
-        if (seed.legacyBody[locale] === tpl.body) return { ...tpl, body: seed.body[locale] }
+        if (seed.name[locale] === tpl.name && seed.previousBodies?.some((b) => b[locale] === tpl.body)) {
+          return { ...tpl, body: seed.body[locale] }
+        }
       }
     }
     return tpl

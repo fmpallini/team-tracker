@@ -747,6 +747,29 @@ test.each([
   expect((document.querySelector('.tt-prefs-one-on-one-template-select') as HTMLSelectElement).value).toBe(seed.id)
 })
 
+test('restore defaults refreshes a built-in untouched since an earlier release, never an edited one', () => {
+  const { store, shell, appCtl } = setup()
+  const meeting374 = '## Meeting — {time}\n**Attendees:** \n### Agenda\n- \n### Decisions\n- \n### Actions (who → what → when)\n- '
+  const decision374 = '## Decision — {date}\n**Context:** \n**Options considered:** \n**Decision:** \n**Consequences / follow-up:** '
+  store.update((d) => {
+    const meeting = d.templates.find((tp) => tp.name === 'Meeting')!
+    meeting.body = meeting374
+    const decision = d.templates.find((tp) => tp.name === 'Decision')!
+    decision.body = decision374 + 'my notes'
+  })
+  const meetingId = store.doc.templates.find((tp) => tp.name === 'Meeting')!.id
+  openPrefs(store, shell, 'en-US', appCtl)
+  clickTab('Templates and 1:1')
+
+  clickByText('Restore defaults')
+
+  const current = builtinTemplates('en-US')
+  const meeting = store.doc.templates.find((tp) => tp.id === meetingId)!
+  expect(meeting.body).toBe(current.find((tp) => tp.name === 'Meeting')!.body) // same template, refreshed in place
+  expect(store.doc.templates.find((tp) => tp.name === 'Decision')!.body).toBe(decision374 + 'my notes')
+  expect(store.doc.templates).toHaveLength(current.length)
+})
+
 test('restore defaults is idempotent when nothing is missing', () => {
   const { store, shell, appCtl } = setup()
   openPrefs(store, shell, 'en-US', appCtl)

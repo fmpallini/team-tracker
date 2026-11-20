@@ -1,4 +1,4 @@
-import { isOneOnOneCandidate, builtinTemplates, resolveTemplate, reseedBuiltinTemplates, upgradeLegacySeedBodies, ONE_ON_ONE_SEED_NAME } from '../src/core/templates'
+import { isOneOnOneCandidate, builtinTemplates, resolveTemplate, reseedBuiltinTemplates, upgradeLegacySeedBodies, refreshBuiltinBodies, ONE_ON_ONE_SEED_NAME } from '../src/core/templates'
 import { createEmptyDocument } from '../src/core/document'
 
 test('eight builtins with scopes', () => {
@@ -133,6 +133,42 @@ test('upgradeLegacySeedBodies upgrades only exact legacy bodies', () => {
   expect(p!.body).toBe(builtinTemplates('pt-BR').find(t => t.name === '1:1')!.body)
   expect(e!.body).toBe(builtinTemplates('en-US').find(t => t.name === '1:1')!.body)
   expect(x).toBe(edited)
+})
+
+// Meeting as 3.7.4 shipped it, before the bold-label restyle.
+const MEETING_374_EN = '## Meeting — {time}\n**Attendees:** \n### Agenda\n- \n### Decisions\n- \n### Actions (who → what → when)\n- '
+const MEETING_374_PT = '## Reunião — {time}\n**Participantes:** \n### Pauta\n- \n### Decisões\n- \n### Ações (quem → o quê → quando)\n- '
+
+test('upgradeLegacySeedBodies leaves later built-in versions alone (only Restore defaults moves them)', () => {
+  const tpl = { id: 'm', name: 'Meeting', scope: 'daily' as const, body: MEETING_374_EN }
+  expect(upgradeLegacySeedBodies([tpl])[0]).toBe(tpl)
+})
+
+test('refreshBuiltinBodies moves an untouched earlier built-in to the current body, in its own locale', () => {
+  const [en, pt] = refreshBuiltinBodies([
+    { id: 'e', name: 'Meeting', scope: 'daily', body: MEETING_374_EN },
+    { id: 'p', name: 'Reunião', scope: 'daily', body: MEETING_374_PT },
+  ])
+  expect(en).toEqual({ id: 'e', name: 'Meeting', scope: 'daily', body: builtinTemplates('en-US').find(t => t.name === 'Meeting')!.body })
+  expect(pt!.body).toBe(builtinTemplates('pt-BR').find(t => t.name === 'Reunião')!.body)
+})
+
+test('refreshBuiltinBodies covers every earlier 1:1 body', () => {
+  const current = builtinTemplates('en-US').find(t => t.name === '1:1')!.body
+  const headed = '## 1:1 — {date}\n### Carried over\n{carryover}\n### How are they / energy\n- \n### Their topics\n- \n### My topics\n- \n### Feedback\n- \n### Agreed actions\n- [ ] '
+  for (const body of [LEGACY_EN, headed]) {
+    expect(refreshBuiltinBodies([{ id: 'a', name: '1:1', scope: 'personal', body }])[0]!.body).toBe(current)
+  }
+})
+
+test('refreshBuiltinBodies leaves edited, renamed and current templates alone', () => {
+  const edited = { id: 'x', name: 'Meeting', scope: 'daily' as const, body: MEETING_374_EN + 'mine' }
+  const renamed = { id: 'y', name: 'Team sync', scope: 'daily' as const, body: MEETING_374_EN }
+  const current = builtinTemplates('en-US')[0]!
+  const out = refreshBuiltinBodies([edited, renamed, current])
+  expect(out[0]).toBe(edited)
+  expect(out[1]).toBe(renamed)
+  expect(out[2]).toBe(current)
 })
 
 test('isOneOnOneCandidate excludes only daily-scoped templates', () => {
