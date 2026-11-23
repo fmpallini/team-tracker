@@ -394,9 +394,9 @@ describe('header right cluster', () => {
   test('order: save pill, view/help group, settings then close-file', () => {
     const shell = setup()
     const order = Array.from(shell.headerRight.querySelectorAll('.tt-save-pill-wrap, .tt-btn')).map(
-      (e) => ['tt-save-pill-wrap', 'tt-btn-fullscreen', 'tt-btn-help', 'tt-btn-settings', 'tt-btn-close-file'].find((c) => e.classList.contains(c))
+      (e) => ['tt-save-pill-wrap', 'tt-btn-help', 'tt-btn-settings', 'tt-btn-close-file'].find((c) => e.classList.contains(c))
     )
-    expect(order).toEqual(['tt-save-pill-wrap', 'tt-btn-fullscreen', 'tt-btn-help', 'tt-btn-settings', 'tt-btn-close-file'])
+    expect(order).toEqual(['tt-save-pill-wrap', 'tt-btn-help', 'tt-btn-settings', 'tt-btn-close-file'])
   })
 
   test('there is no favorites ★ button any more', () => {

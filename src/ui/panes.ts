@@ -1324,13 +1324,6 @@ ${t(lc, 'pane_history_hint')}`
       },
       icon(isFav ? 'starFill' : 'star')
     )
-    const printBtn = iconButton({
-      class: 'tt-pane-print-btn',
-      title: t(lc, 'pane_print_title'),
-      icon: 'print',
-      disabled: cur === null,
-      onclick: () => printPane(idx),
-    })
     const splitBtn = iconButton({
       class: 'tt-pane-split-btn',
       title: t(lc, effectiveSplit() ? 'pane_unsplit_title' : 'pane_split_title'),
@@ -1349,7 +1342,8 @@ ${t(lc, 'pane_history_hint')}`
       { class: 'tt-pane-bar-left' },
       backBtn, fwdBtn, ...(latestBtn ? [latestBtn] : []), moduleTriggerWrap, buildTabs(idx, teamId, cur, flashTitle, due)
     )
-    const right = el('div', { class: 'tt-pane-bar-right' }, favBtn, printBtn, splitBtn)
+    // Printing has no button here: Ctrl+P and the fast switch print the focused pane (printFocused).
+    const right = el('div', { class: 'tt-pane-bar-right' }, favBtn, splitBtn)
     barEl.append(left, right)
   }
 

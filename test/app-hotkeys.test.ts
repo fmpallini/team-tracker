@@ -55,6 +55,15 @@ describe('global Ctrl chords', () => {
     document.body.innerHTML = '<div class="tt-modal-overlay"></div>'
     expect(resolve({ key: 'l', code: 'KeyL', ctrlKey: true, altKey: true })).toBeNull()
   })
+
+  test('Ctrl+P / Cmd+P → print, claimed even under a blocking modal; Ctrl+Shift+P and Ctrl+Alt+P are not', () => {
+    expect(resolve({ key: 'p', code: 'KeyP', ctrlKey: true })).toEqual({ type: 'print' })
+    expect(resolve({ key: 'p', code: 'KeyP', metaKey: true })).toEqual({ type: 'print' })
+    expect(resolve({ key: 'p', code: 'KeyP', ctrlKey: true, shiftKey: true })).toBeNull()
+    expect(resolve({ key: 'p', code: 'KeyP', ctrlKey: true, altKey: true })).toBeNull()
+    document.body.innerHTML = '<div class="tt-modal-overlay"></div>'
+    expect(resolve({ key: 'p', code: 'KeyP', ctrlKey: true })).toEqual({ type: 'print' })
+  })
 })
 
 describe('Ctrl+Alt+F (retired favorites hotkey)', () => {

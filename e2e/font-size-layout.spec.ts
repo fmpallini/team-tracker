@@ -146,7 +146,7 @@ for (const [size, width] of [['M', 700], ['XL', 900], ['XL', 400]] as const) {
     await page.keyboard.press('F2')
     await expect(page.locator('.tt-header.tt-header-compact')).toBeVisible()
     const visible = await page.evaluate(() =>
-      ['.tt-save-pill', '.tt-btn-close-file', '.tt-btn-settings', '.tt-btn-promo', '.tt-btn-help', '.tt-btn-fullscreen', '.tt-search-input', '.tt-app-name', '.tt-sidebar-toggle', '.tt-header-team-indicator']
+      ['.tt-save-pill', '.tt-btn-close-file', '.tt-btn-settings', '.tt-btn-promo', '.tt-btn-help', '.tt-search-input', '.tt-app-name', '.tt-sidebar-toggle', '.tt-header-team-indicator']
         .filter((q) => { const e = document.querySelector(q); return e !== null && e.getBoundingClientRect().width > 0 })
     )
     expect(visible.sort()).toEqual(['.tt-btn-close-file', '.tt-btn-settings', '.tt-save-pill'])

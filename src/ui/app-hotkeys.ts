@@ -16,6 +16,8 @@ import { comboHotkeyAllowed, navHotkeyAllowed, outsideFieldsAndModals, inEditabl
 export type AppHotkeyAction =
   | { type: 'palette' }
   | { type: 'closeFile' }
+  /** Ctrl+P → print the focused pane (claimed even with a modal open; the caller decides whether it prints). */
+  | { type: 'print' }
   /** Ctrl+Z outside a field, while a delete or move can still be taken back. */
   | { type: 'undoDelete' }
   /** F1 → open Help, or close it when it is already open (the caller knows which). */
@@ -114,6 +116,12 @@ export function resolveAppHotkey(e: KeyboardEvent, ctx: AppHotkeyContext): AppHo
   if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && matchKey(e, 'l')) {
     return comboHotkeyAllowed(e) ? { type: 'closeFile' } : null
   }
+
+  // Ctrl+P prints the focused pane. Claimed everywhere, like Ctrl+S: the
+  // browser's own print of the whole app shell is never what anyone wants
+  // (the app has no print stylesheet), so even under a blocking modal the
+  // chord is swallowed and the caller simply does nothing.
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && matchKey(e, 'p')) return { type: 'print' }
 
   if (ctx.undoOfferLive && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && matchKey(e, 'z')) {
     return outsideFieldsAndModals(e) ? { type: 'undoDelete' } : null

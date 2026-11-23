@@ -418,7 +418,6 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header.tt-header-compact .tt-search-wrap,
 .tt-header.tt-header-compact .tt-header-team-indicator-group,
 .tt-header.tt-header-compact .tt-btn-promo,
-.tt-header.tt-header-compact .tt-btn-fullscreen,
 .tt-header.tt-header-compact .tt-btn-help {
   display: none;
 }
@@ -950,10 +949,11 @@ body { background: var(--bg); color: var(--fg); }
 .tt-palette-item:hover { background: var(--hover); }
 .tt-palette-item.selected, .tt-palette-item.selected:hover { background: var(--selected); }
 .tt-palette-label { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tt-palette-due { flex: none; color: var(--muted); font-size: .85rem; white-space: nowrap; }
+.tt-palette-due, .tt-palette-hint { flex: none; color: var(--muted); font-size: .85rem; white-space: nowrap; }
+.tt-palette-hint { font-family: inherit; }
 .tt-palette-team { flex: none; max-width: 10rem; color: var(--muted); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* --muted is tuned for the page, and dipped under 4.5:1 on the --selected wash. */
-.tt-palette-item.selected .tt-palette-due, .tt-palette-item.selected .tt-palette-team { color: color-mix(in srgb, var(--muted) 70%, var(--fg)); }
+.tt-palette-item.selected .tt-palette-due, .tt-palette-item.selected .tt-palette-team, .tt-palette-item.selected .tt-palette-hint { color: color-mix(in srgb, var(--muted) 70%, var(--fg)); }
 .tt-palette-remove {
   flex: none; width: 1.5rem; height: 1.5rem; padding: 0; line-height: 1;
   background: transparent; color: var(--fg); border: none; border-radius: var(--r-sm); cursor: pointer; opacity: .6;

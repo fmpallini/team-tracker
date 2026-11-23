@@ -133,7 +133,8 @@ const TITLE_KEY: Record<Exclude<PillHealth, 'ok' | 'export'>, MsgKey> = {
 /** How often the export age ("Export file · 3 h ago") is refreshed. */
 const AGE_TICK_MS = 60_000
 
-function toggleFullscreen(): void {
+/** The fast switch's Fullscreen command (the header has no button for it; F11 is the browser's own). */
+export function toggleFullscreen(): void {
   if (document.fullscreenElement) {
     document.exitFullscreen().catch(() => {})
   } else {
@@ -219,12 +220,6 @@ export function createShell(locale: Locale): Shell {
     saveIndicator
   )
 
-  const fullscreenBtn = iconButton({
-    class: 'tt-btn-fullscreen',
-    title: t(locale, 'fullscreen'),
-    icon: 'fullscreen',
-    onclick: () => toggleFullscreen(),
-  })
   let closeFileHandler: (() => void) | null = null
   const closeFileBtn = iconButton({
     class: 'tt-btn-close-file',
@@ -247,11 +242,11 @@ export function createShell(locale: Locale): Shell {
     onclick: () => helpHandler?.(),
   })
 
-  // The right cluster is status, then view/help utilities, then settings and the session-ending close-file button last, kept apart from the utilities. (mountSearch() appends the search box to headerLeft.)
+  // The right cluster is status, then help, settings and the session-ending close-file button last. Fullscreen (F11)
+  // and print (Ctrl+P) have no button: both live in the fast switch. (mountSearch() appends the search box to headerLeft.)
   headerRight.append(
     savePillWrap,
-    el('span', { class: 'tt-header-btn-group' }, fullscreenBtn, helpBtn),
-    el('span', { class: 'tt-header-btn-group' }, settingsBtn, closeFileBtn)
+    el('span', { class: 'tt-header-btn-group' }, helpBtn, settingsBtn, closeFileBtn)
   )
 
   const header = el('header', { class: 'tt-header' }, headerLeft, headerCenter, headerRight)
@@ -362,7 +357,6 @@ export function createShell(locale: Locale): Shell {
     document.documentElement.dataset.size = prefs.fontSize
     if (localeChanged) {
       appNameBtn.title = t(currentLocale, 'app_name_button_title')
-      setIconButtonTitle(fullscreenBtn, t(currentLocale, 'fullscreen'))
       setIconButtonTitle(closeFileBtn, t(currentLocale, 'close_file_title'))
       setIconButtonTitle(settingsBtn, t(currentLocale, 'settings'))
       setIconButtonTitle(helpBtn, t(currentLocale, 'help_global_title'))

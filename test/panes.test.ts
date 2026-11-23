@@ -1,7 +1,7 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import { createPaneManager, focusPaneBar, installArrowFallbackFocus, requestNewItem, NEW_ITEM_EVENT, installMouseHistoryButtons, navigateFocusedHistory, jumpFocusedHistoryToLatest, setFocusedPane, swapPaneSides, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from '../src/ui/panes'
+import { createPaneManager, focusPaneBar, installArrowFallbackFocus, requestNewItem, NEW_ITEM_EVENT, installMouseHistoryButtons, navigateFocusedHistory, jumpFocusedHistoryToLatest, setFocusedPane, swapPaneSides, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager, type AppPaneManager } from '../src/ui/panes'
 import { t, todayIso } from '../src/core/i18n'
 import { addDaysIso } from '../src/core/date'
 import { currentLoc } from '../src/core/nav'
@@ -30,7 +30,7 @@ function stubMatchMedia(): void {
   })) as unknown as typeof window.matchMedia
 }
 
-function setup(): { shell: Shell; store: Store; pm: PaneManager } {
+function setup(): { shell: Shell; store: Store; pm: AppPaneManager } {
   document.body.innerHTML = ''
   stubMatchMedia()
   const doc = createEmptyDocument('en-US')
@@ -1135,15 +1135,12 @@ test('creating the first team hides the CTA and shows the pane shell', () => {
   expect(noTeams.style.display).toBe('none')
 })
 
-test('print button is disabled when the pane is empty and enabled once a module is open', () => {
-  const { store, pm } = setup()
-  expect(paneBtn(0, 'tt-pane-print-btn').disabled).toBe(true)
-
-  addTeam(store, 'T1')
-  store.update((d) => { d.nav.activeTeamId = 'T1' })
-  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
-
-  expect(paneBtn(0, 'tt-pane-print-btn').disabled).toBe(false)
+test('the pane bar has no print button, and printing an empty pane opens no window', () => {
+  const { pm } = setup()
+  expect(document.querySelector('.tt-pane-bar-right')!.querySelectorAll('button')).toHaveLength(2) // favorite, split
+  const openSpy = vi.spyOn(window, 'open')
+  pm.printFocused()
+  expect(openSpy).not.toHaveBeenCalled()
 })
 
 test('module title/modules button are merged into one trigger: shows current module name, no separate title span, tracks disabled/title with team state', () => {
@@ -1166,7 +1163,7 @@ test('module title/modules button are merged into one trigger: shows current mod
   expect(document.querySelector('[data-pane-idx="0"] .tt-pane-title')).toBeNull()
 })
 
-test('print button opens a print window with a header (team/module) and a clone of the pane body, via DOM APIs', () => {
+test('printFocused opens a print window with a header (team/module) and a clone of the pane body, via DOM APIs', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')
   store.update((d) => { d.nav.activeTeamId = 'T1' })
@@ -1185,7 +1182,7 @@ test('print button opens a print window with a header (team/module) and a clone 
   const fakeWin = { document: fakeDoc, focus: vi.fn(), print: printSpy } as unknown as Window
   const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin)
 
-  paneBtn(0, 'tt-pane-print-btn').click()
+  pm.printFocused()
 
   expect(openSpy).toHaveBeenCalled()
   expect(headAppend).toHaveBeenCalled() // app stylesheet clone + print override style
@@ -1220,7 +1217,7 @@ test('printing keeps every select at its current choice, not its first option', 
   }
   vi.spyOn(window, 'open').mockReturnValue({ document: fakeDoc, focus: vi.fn(), print: vi.fn() } as unknown as Window)
 
-  paneBtn(0, 'tt-pane-print-btn').click()
+  pm.printFocused()
 
   const content = bodyAppend.mock.calls[0]![1] as HTMLElement
   expect(Array.from(content.querySelectorAll('select')).map((s) => s.value)).toEqual(['3', '2', '1'])
@@ -1244,7 +1241,7 @@ test('printing always hides the daily-notes calendar column — it\'s a navigati
   const fakeWin = { document: fakeDoc, focus: vi.fn(), print: printSpy } as unknown as Window
   vi.spyOn(window, 'open').mockReturnValue(fakeWin)
 
-  paneBtn(0, 'tt-pane-print-btn').click()
+  pm.printFocused()
 
   const styleEls = headAppend.mock.calls.map((c) => c[0] as HTMLStyleElement).filter((n) => n.tagName === 'STYLE')
   const printOverrideStyle = styleEls.find((s) => s.textContent?.includes('tt-daily-calendar-col'))
