@@ -1,5 +1,5 @@
 import { normalizeImageSpacing } from '../src/ui/editor-dom'
-import { createEditor, flushAllEditors, setEditorsReadOnly, detectInlinePattern, detectBlockPrefix, leadingIndentLen, flattenTopLevelBlockWrappers, type Editor, type EditorHooks } from '../src/ui/editor'
+import { createEditor, flushAllEditors, setEditorsReadOnly, SLASH_TRIGGER_EVENT, detectInlinePattern, detectBlockPrefix, leadingIndentLen, flattenTopLevelBlockWrappers, type Editor, type EditorHooks } from '../src/ui/editor'
 import { recordEdit } from '../src/ui/editor-undo'
 import { htmlToMd, type RefInfo } from '../src/core/markdown'
 import { t } from '../src/core/i18n'
@@ -688,9 +688,12 @@ describe('@ trigger', () => {
     sel.removeAllRanges()
     sel.addRange(range)
 
-    const atBtn = Array.from(editor.root.querySelectorAll<HTMLButtonElement>('.tt-editor-toolbar button'))
-      .find((b) => b.title === t('en-US', 'editor_insert_ref_title'))!
-    atBtn.click()
+    const moreBtn = Array.from(editor.root.querySelectorAll<HTMLButtonElement>('.tt-editor-toolbar button'))
+      .find((b) => b.title === t('en-US', 'editor_more_title'))!
+    moreBtn.click()
+    Array.from(document.querySelectorAll<HTMLElement>('.tt-atref-item'))
+      .find((el) => el.querySelector('span')?.textContent === t('en-US', 'editor_more_reference'))!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }))
 
     expect(editorEl.querySelector('pre')!.textContent).toBe('code')
     expect(hooks.atRanges.length).toBe(0)
@@ -1719,30 +1722,93 @@ describe('toolbar', () => {
     return Array.from(editor.root.querySelectorAll('button')).find((b) => b.title === title) as HTMLButtonElement
   }
 
+  // The More menu holds the Insert group (template, reference) and the Copy group.
   function openCopyMenu(editor: Editor): void {
-    toolbarButton(editor, t('en-US', 'editor_copy_options_title')).click()
+    toolbarButton(editor, t('en-US', 'editor_more_title')).click()
   }
 
+  /** A More-menu row's label, without the shortcut hint an Insert row carries. */
+  const menuItemLabel = (el: Element): string | null => el.querySelector('span')?.textContent ?? el.textContent
+
   function pickCopyOption(label: string): void {
-    const item = Array.from(document.querySelectorAll('.tt-atref-item')).find((el) => el.textContent === label) as HTMLElement
+    const item = Array.from(document.querySelectorAll('.tt-atref-item')).find((el) => menuItemLabel(el) === label) as HTMLElement
     item.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   }
 
-  test('copy button opens a menu with plain/formatted/markdown options, closed on Escape', () => {
+  test('More button opens Insert (template, reference) and Copy (plain/formatted/markdown) groups, closed on Escape', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
 
     openCopyMenu(editor)
 
-    const labels = Array.from(document.querySelectorAll('.tt-atref-item')).map((el) => el.textContent)
+    const headers = Array.from(document.querySelectorAll('.tt-atref-dropdown .tt-atref-group-header')).map((el) => el.textContent)
+    expect(headers).toEqual([t('en-US', 'editor_more_group_insert'), t('en-US', 'editor_more_group_copy')])
+    const labels = Array.from(document.querySelectorAll('.tt-atref-item')).map(menuItemLabel)
     expect(labels).toEqual([
+      t('en-US', 'editor_more_template'),
+      t('en-US', 'editor_more_reference'),
       t('en-US', 'editor_copy_option_plain'),
       t('en-US', 'editor_copy_option_formatted'),
       t('en-US', 'editor_copy_option_markdown'),
     ])
+    const hints = Array.from(document.querySelectorAll('.tt-more-menu-hint')).map((el) => el.textContent)
+    expect(hints).toEqual(['/', '@'])
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+    editor.destroy()
+  })
+
+  test('More menu in a read-only editor leaves out the Insert group', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    try {
+      setEditorsReadOnly(true)
+      openCopyMenu(editor)
+      const headers = Array.from(document.querySelectorAll('.tt-atref-dropdown .tt-atref-group-header')).map((el) => el.textContent)
+      expect(headers).toEqual([t('en-US', 'editor_more_group_copy')])
+      expect(Array.from(document.querySelectorAll('.tt-atref-item')).map(menuItemLabel)).toEqual([
+        t('en-US', 'editor_copy_option_plain'),
+        t('en-US', 'editor_copy_option_formatted'),
+        t('en-US', 'editor_copy_option_markdown'),
+      ])
+    } finally {
+      setEditorsReadOnly(false)
+      editor.destroy()
+    }
+  })
+
+  test('More menu Template… fires the slash trigger and closes the menu', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('hello')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const fired = vi.fn()
+    editorEl.addEventListener(SLASH_TRIGGER_EVENT, fired)
+
+    openCopyMenu(editor)
+    pickCopyOption(t('en-US', 'editor_more_template'))
+
+    expect(fired).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
+    editor.destroy()
+  })
+
+  test('More menu Enter does not reach the editor (a picker it opens must not see the same Enter)', () => {
+    const editor = createEditor(makeHooks(), 'en-US')
+    document.body.appendChild(editor.root)
+    editor.setMd('hello')
+    const editorEl = editor.root.querySelector('.editor') as HTMLElement
+    const fired = vi.fn()
+    editorEl.addEventListener(SLASH_TRIGGER_EVENT, fired)
+    const seen = vi.fn()
+    editorEl.addEventListener('keydown', seen)
+
+    openCopyMenu(editor)
+    editorEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+    expect(fired).toHaveBeenCalledTimes(1) // Template... is the first row, selected on open
+    expect(seen).not.toHaveBeenCalled()
     editor.destroy()
   })
 
@@ -1772,8 +1838,8 @@ describe('toolbar', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
     expect(items()[0]!.classList.contains('selected')).toBe(false)
     expect(items()[1]!.classList.contains('selected')).toBe(true)
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
-    expect(items()[2]!.classList.contains('selected')).toBe(true) // third option = "Copy as markdown"
+    for (let i = 0; i < 3; i++) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(items()[4]!.classList.contains('selected')).toBe(true) // last option = Copy > Markdown
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     expect(writeText).toHaveBeenCalledWith('**bold** text')
@@ -2070,13 +2136,14 @@ describe('toolbar', () => {
     })
   })
 
-  test('@ button inserts "@" at the caret via execCommand, same path real typing takes', () => {
+  test('More menu Reference… inserts "@" at the caret via execCommand, same path real typing takes', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
     editor.setMd('hello')
     const execSpy = vi.spyOn(document, 'execCommand').mockReturnValue(true)
 
-    toolbarButton(editor, t('en-US', 'editor_insert_ref_title')).click()
+    openCopyMenu(editor)
+    pickCopyOption(t('en-US', 'editor_more_reference'))
 
     expect(execSpy).toHaveBeenCalledWith('insertText', false, '@')
     editor.destroy()
@@ -2526,9 +2593,7 @@ describe('toolbar', () => {
       t('en-US', 'editor_link_title'),
       t('en-US', 'editor_image_title'),
       t('en-US', 'editor_clear_format_title'),
-      t('en-US', 'editor_templates_title'),
-      t('en-US', 'editor_insert_ref_title'),
-      t('en-US', 'editor_copy_options_title'),
+      t('en-US', 'editor_more_title'),
       t('en-US', 'editor_help_title'),
     ])
     editor.destroy()

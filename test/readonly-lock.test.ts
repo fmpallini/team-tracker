@@ -153,7 +153,7 @@ test('read-only: navigation buttons and exempt fields keep working', () => {
   expect(fire($('.search'), beforeInput()).defaultPrevented).toBe(false)
 })
 
-test('read-only: editor formatting buttons are refused; copy and help are not', () => {
+test('read-only: editor formatting buttons are refused; More (copy) and help are not', () => {
   const editor = createEditor({ onChange() {}, onRefClick() {}, onAtTrigger() {}, onSlashTrigger() {} }, 'en-US')
   document.body.appendChild(editor.root)
   editor.setMd('a')
@@ -165,7 +165,7 @@ test('read-only: editor formatting buttons are refused; copy and help are not', 
     expect(editor.getMd()).toBe('a')
     expect(toasts()).toHaveLength(1)
 
-    button('editor_copy_options_title').click()
+    button('editor_more_title').click()
     expect(document.querySelector('.tt-atref-dropdown')).not.toBeNull()
   } finally {
     editor.destroy()

@@ -1192,6 +1192,9 @@ body { background: var(--bg); color: var(--fg); }
 .tt-atref-item:hover { background: var(--hover); }
 .tt-atref-item.selected, .tt-atref-item.selected:hover { background: var(--selected); }
 .tt-atref-group-header { padding: .3rem .6rem .15rem; font-size: .8rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
+/* The editor's More menu: an Insert row carries its typed shortcut (/ or @) at the right edge. */
+.tt-more-menu-item { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-3); }
+.tt-more-menu-hint { font: inherit; font-size: .8rem; color: var(--muted); }
 .tt-templates-empty { color: var(--muted); cursor: default; }
 .tt-templates-empty:hover { background: none; }
 
