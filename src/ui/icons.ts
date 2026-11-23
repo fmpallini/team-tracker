@@ -27,6 +27,11 @@ const PATHS = {
   latest: '<path d="M4 3.5L8.5 8 4 12.5M12 3.5v9"/>',
   mouse: '<rect x="4.5" y="2" width="7" height="12" rx="3.5"/><path d="M8 2v4.5"/>',
   split: '<rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M8 3v10"/>',
+  // The pane bar's split button, one per state. A filled half is the *other* pane, on screen (the code-editor
+  // layout-toggle convention): single view has none, only a dotted line where the split would go.
+  splitOpen: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M8 3v10" stroke-dasharray="0.6 2.6"/>',
+  splitShowRight: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path class="f" d="M8 3h4.5A1.5 1.5 0 0 1 14 4.5v7a1.5 1.5 0 0 1-1.5 1.5H8z"/>',
+  splitShowLeft: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path class="f" d="M3.5 3H8v10H3.5A1.5 1.5 0 0 1 2 11.5v-7A1.5 1.5 0 0 1 3.5 3z"/>',
   chevDown: '<path d="M3.5 6L8 10.5L12.5 6"/>',
   chevRight: '<path d="M6 3.5L10.5 8 6 12.5"/>',
   chevUp: '<path d="M3.5 10L8 5.5l4.5 4.5"/>',

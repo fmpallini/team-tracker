@@ -579,6 +579,55 @@ test('clicking the unsplit button in pane 1\'s own bar expands pane 1, even when
   expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
 })
 
+test('the split button shows the layout and names what a click opens or closes', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const split = (idx: 0 | 1): HTMLButtonElement => paneBtn(idx, 'tt-pane-split-btn')
+  const iconOf = (idx: 0 | 1): string | undefined => Array.from(split(idx).querySelector('.tt-icon')!.classList).find((c) => c.startsWith('tt-icon-') && c !== 'tt-icon-svg')
+  const risks = t('en-US', 'module_risks')
+  const milestones = t('en-US', 'module_milestones')
+
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
+  // Single view, nothing ever opened on the right.
+  expect(iconOf(0)).toBe('tt-icon-splitOpen')
+  expect(split(0).dataset.split).toBe('false')
+  expect(split(0).title).toBe(`${t('en-US', 'pane_split_open_empty_title')} (Alt+↑)`)
+
+  pm.toggleSplit()
+  pm.openInPane(1, { teamId: 'T1', ref: { kind: 'milestones' } })
+  // Split view: each bar fills the other pane's half and names it; no Alt+↑ (it follows focus, not this bar).
+  expect(iconOf(0)).toBe('tt-icon-splitShowRight')
+  expect(iconOf(1)).toBe('tt-icon-splitShowLeft')
+  expect(split(0).dataset.split).toBe('true')
+  expect(split(0).title).toBe(t('en-US', 'pane_split_close_right_title', { module: milestones }))
+  expect(split(1).title).toBe(t('en-US', 'pane_split_close_left_title', { module: risks }))
+  expect(split(0).getAttribute('aria-label')).toBe(split(0).title)
+
+  store.updateNav((d) => { d.nav.focusedPane = 0 })
+  pm.toggleSplit()
+  // Back to single view: the right pane still holds Milestones, so opening it says so.
+  expect(iconOf(0)).toBe('tt-icon-splitOpen')
+  expect(split(0).title).toBe(`${t('en-US', 'pane_split_open_title', { module: milestones })} (Alt+↑)`)
+})
+
+test('renaming the person the other pane shows updates this bar\'s split tooltip', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => {
+    d.nav.activeTeamId = 'T1'
+    d.teams[0]!.members.push({ id: 'p1', name: 'Ana', role: '', parentId: null, order: 0, notes: '' })
+  })
+  pm.toggleSplit()
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
+  pm.openInPane(1, { teamId: 'T1', ref: { kind: 'person', personId: 'p1', group: 'members' } })
+  expect(paneBtn(0, 'tt-pane-split-btn').title).toContain('Ana')
+
+  store.update((d) => { d.teams[0]!.members[0]!.name = 'Bia' }, { teamId: 'T1' })
+
+  expect(paneBtn(0, 'tt-pane-split-btn').title).toContain('Bia')
+})
+
 test('opening a module already shown in the other pane focuses that pane for real, surviving the click bubbling back up to the pane it started in (regression)', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')

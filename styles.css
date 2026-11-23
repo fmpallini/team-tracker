@@ -873,6 +873,8 @@ body { background: var(--bg); color: var(--fg); }
   min-width: 2rem; padding-left: 0; padding-right: 0;
 }
 .tt-pane-fav-btn[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); }
+/* Split view: tinted like a set favorite, so the filled half (the other pane, on screen) reads in the accent. Not aria-pressed: the label already changes with the state, and a pressed state on top would be read twice. */
+.tt-pane-split-btn[data-split='true'] { color: var(--accent); border-color: var(--accent); }
 .tt-pane-fav-btn:disabled { opacity: .5; cursor: not-allowed; }
 .tt-pane-title-trigger-wrap { position: relative; min-width: 0; display: flex; }
 .tt-pane-title-trigger {

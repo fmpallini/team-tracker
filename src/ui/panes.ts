@@ -532,9 +532,12 @@ export function createPaneManager(shell: Shell, store: Store): AppPaneManager {
       if (!cur) continue
       const painted = barEls[idx].querySelector('.tt-pane-title-text')?.textContent
       const paintedStar = barEls[idx].querySelector('.tt-pane-fav-btn')?.getAttribute('aria-pressed')
+      // The split button's tooltip names the *other* pane's module, so a rename over there repaints this bar too.
+      const paintedSplit = barEls[idx].querySelector<HTMLElement>('.tt-pane-split-btn')?.title
       if (
         (painted != null && painted !== titleFor(store.doc, cur, localeNow())) ||
-        (paintedStar != null && paintedStar !== String(isFavorite(store.doc, cur)))
+        (paintedStar != null && paintedStar !== String(isFavorite(store.doc, cur))) ||
+        (paintedSplit != null && paintedSplit !== splitTitle(idx, localeNow()))
       ) renderBar(idx)
     }
   })
@@ -1238,6 +1241,27 @@ ${t(lc, 'pane_history_hint')}`
     return strip
   }
 
+  /**
+   * The split button's tooltip in pane `idx`'s bar: what a click does, naming
+   * the module it opens or closes. A click anywhere in a pane focuses it first
+   * (the capture listener on paneEls), and un-splitting keeps the focused
+   * pane, so in split view each bar's button keeps its own pane and closes the
+   * other. Alt+↑ is named only in single view: in split view it acts on the
+   * focused pane, which need not be this bar's (and a focus change repaints no
+   * bar, so a focus-dependent title would go stale).
+   */
+  function splitTitle(idx: 0 | 1, lc: Locale): string {
+    const panes = store.doc.nav.panes
+    if (!effectiveSplit()) {
+      const right = currentLoc(panes[1])
+      const open = right ? t(lc, 'pane_split_open_title', { module: titleFor(store.doc, right, lc) }) : t(lc, 'pane_split_open_empty_title')
+      return `${open} (Alt+↑)`
+    }
+    const other = currentLoc(panes[otherPaneIdx(idx)])
+    const module = other ? titleFor(store.doc, other, lc) : t(lc, 'pane_empty')
+    return t(lc, idx === 0 ? 'pane_split_close_right_title' : 'pane_split_close_left_title', { module })
+  }
+
   function renderBar(idx: 0 | 1): void {
     const barEl = barEls[idx]
     barEl.innerHTML = ''
@@ -1324,12 +1348,14 @@ ${t(lc, 'pane_history_hint')}`
       },
       icon(isFav ? 'starFill' : 'star')
     )
+    const split = effectiveSplit()
     const splitBtn = iconButton({
       class: 'tt-pane-split-btn',
-      title: t(lc, effectiveSplit() ? 'pane_unsplit_title' : 'pane_split_title'),
-      icon: 'split',
+      title: splitTitle(idx, lc),
+      icon: split ? (idx === 0 ? 'splitShowRight' : 'splitShowLeft') : 'splitOpen',
       onclick: () => toggleSplit(),
     })
+    splitBtn.dataset.split = String(split)
 
     const moduleTriggerWrap = el(
       'div',
