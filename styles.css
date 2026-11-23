@@ -365,7 +365,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header-team-indicator:focus-visible .tt-header-team-indicator-caret { opacity: 1; }
 
 /* flex, not inline-flex: a block-level box takes the (capped) width of .tt-header-center, so the indicator's label can ellipsize instead of the pill overflowing into the save pill beside it. */
-.tt-header-team-indicator-group { display: flex; align-items: center; gap: .4rem; min-width: 0; max-width: 100%; }
+/* The inline padding is the focus ring's reach (2px offset + 2px ring): .tt-header-center clips its overflow, and its block padding only covers the top and bottom, so without it the ring around the due pill (first) and the team pill (last) was cut at the slot's sides. */
+.tt-header-team-indicator-group { display: flex; align-items: center; gap: .4rem; min-width: 0; max-width: 100%; box-sizing: border-box; padding-inline: 4px; }
 
 .tt-header-due-summary {
   display: none; align-items: center; justify-content: center;
