@@ -50,8 +50,8 @@ export function oneOnOneDueDate(person: Person, group: PersonGroup, prefs: Prefs
 
 /**
  * How many days the next 1:1 is late on `today`, or null when it is not: due
- * today or later, never held, or no cadence. The org chart's mark and the
- * person header's colour read this, so "overdue" means one thing there.
+ * today or later, never held, or no cadence. The person header's colour reads
+ * this; the org chart's mark uses core/due.ts's dueState, the due list's rule.
  */
 export function oneOnOneOverdueDays(person: Person, group: PersonGroup, prefs: Prefs, today: string): number | null {
   const due = oneOnOneDueDate(person, group, prefs)

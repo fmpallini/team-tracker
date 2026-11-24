@@ -1400,8 +1400,9 @@ body { background: var(--bg); color: var(--fg); }
   border: 1px solid var(--border);
   cursor: grab; position: relative; z-index: 1;
 }
-/* Overdue 1:1: the same danger dot as .tt-due-dot, tucked inside the top-right corner rather than on the border. */
+/* A due 1:1: the same dot as .tt-due-dot (red when late, brass when due soon), tucked inside the top-right corner rather than on the border. */
 .tt-org-due { position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
+.tt-org-due.soon { background: var(--brass); }
 .tt-org-name { font-family: var(--font-display); font-weight: 700; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; padding: 0 .9rem; box-sizing: border-box; }
 /* line-height/padding are load-bearing, not spacing taste: `overflow: hidden`
    (needed for the ellipsis) clips at the padding box, and both the synthesized

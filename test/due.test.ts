@@ -1,4 +1,4 @@
-import { collectDueItems, dueItemLabel, dueRelativeLabel, moduleDueSummary, teamDueSummary } from '../src/core/due'
+import { collectDueItems, dueState, dueItemLabel, dueRelativeLabel, moduleDueSummary, teamDueSummary } from '../src/core/due'
 import { createEmptyDocument } from '../src/core/document'
 import type { ActionItem, Doc, Milestone, Person, Team } from '../src/core/types'
 
@@ -205,5 +205,15 @@ describe('dueItemLabel', () => {
     expect(dueItemLabel('en-US', byKind['person']!)).toBe('1:1 · Ana')
     expect(dueItemLabel('pt-BR', byKind['person']!)).toBe('1:1 · Ana')
     expect(dueItemLabel('en-US', byKind['action']!)).toBe('Do thing')
+  })
+})
+
+describe('dueState', () => {
+  test('late before today, soon from today through the window, nothing after it', () => {
+    expect(dueState('2026-11-22', '2026-11-23', 7)).toBe('overdue')
+    expect(dueState('2026-11-23', '2026-11-23', 7)).toBe('soon')
+    expect(dueState('2026-11-30', '2026-11-23', 7)).toBe('soon')
+    expect(dueState('2026-12-01', '2026-11-23', 7)).toBeNull()
+    expect(dueState('2026-11-23', '2026-11-23', 0)).toBe('soon')
   })
 })
