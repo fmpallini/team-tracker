@@ -4,6 +4,17 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.9.0] - 2026-11-23
+
+### Changed
+- The note editor's template, reference and copy buttons are now one More (⋯) menu, which also holds editor help.
+- Print and Fullscreen left the toolbars: use Ctrl+P and F11, or run them from the fast switch (">"), which now lists every command with its shortcut.
+- The split button shows whether one or two panes are open, and its tooltip says which pane a click opens or closes.
+- Buttons now come in three consistent sizes: the header, a pane's toolbars, and the actions inside rows and cards.
+
+### Fixed
+- The focus ring on the header's due-dates button was cut off at its sides when the sidebar was collapsed.
+
 ## [3.8.1] - 2026-11-20
 
 ### Changed
