@@ -371,6 +371,19 @@ describe('commands', () => {
     expect(headings()).toEqual(['Commands'])
   })
 
+  test('a command with a key shows it at the row end, and the query does not match it', () => {
+    const s = setup()
+    createPalette(s.store, s.pm, {
+      selectTeam: s.selectTeam as unknown as (id: string) => void,
+      commands: () => [{ id: 'print', label: 'Print this module', icon: 'print', hint: 'Ctrl+P', run: vi.fn() }],
+    }).open()
+    type('>')
+    expect(rows()[0]!.querySelector('.tt-palette-hint')!.textContent).toBe('Ctrl+P')
+    expect(rows()[0]!.querySelector('.tt-palette-label')!.textContent).toBe('Print this module')
+    type('>ctrl')
+    expect(rows()).toHaveLength(0)
+  })
+
   test('focus goes back before the command runs, so a dialog it opens can return it', () => {
     const { palette, run } = withCommands()
     const opener = document.body.appendChild(document.createElement('button'))

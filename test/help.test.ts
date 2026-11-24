@@ -279,7 +279,6 @@ describe('Global tab', () => {
     const cellFor = (needle: string): Element => cells.find((c) => c.textContent?.includes(needle))!
 
     expect(cellFor('Ctrl+Alt+L').querySelector('.tt-icon-lock')).not.toBeNull()
-    expect(cellFor('F11').querySelector('.tt-icon-fullscreen')).not.toBeNull()
     const history = cells.find((c) => c.querySelector('.tt-icon-back') && c.querySelector('.tt-icon-next'))
     expect(history?.querySelector('.tt-icon-mouse')).not.toBeNull()
     expect(document.body.textContent).not.toMatch(/[🔒⛶◀▶🖱]/u)

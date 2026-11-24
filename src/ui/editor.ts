@@ -119,7 +119,7 @@ export const AT_TRIGGER_EVENT = 'tt-at-trigger'
 
 /**
  * Dispatched on `.editor` whenever `hooks.onSlashTrigger` fires (typing `/`
- * on an empty line) *and* when the 📋 toolbar button is clicked, carrying a
+ * on an empty line) *and* when "Template…" is picked in the toolbar's More menu, carrying a
  * collapsed Range at the insertion point as `event.detail`. Mirrors
  * AT_TRIGGER_EVENT so src/ui/template-picker.ts can plug into both trigger
  * sources through one decoupled entry point.
@@ -1727,7 +1727,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   /**
-   * 📋 toolbar action: opens the template picker at the current caret (or at
+   * More menu "Template…": opens the template picker at the current caret (or at
    * the end of the document if the editor has no live selection yet) rather
    * than only on a typed "/" — same SLASH_TRIGGER_EVENT entry point
    * src/ui/template-picker.ts already listens on for the keyboard trigger.
@@ -1738,7 +1738,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   }
 
   /**
-   * @ toolbar action: inserts "@" at the current caret (or at the end of the
+   * More menu "Reference…": inserts "@" at the current caret (or at the end of the
    * document if the editor has no live selection yet) via the same
    * execCommand('insertText', ...) path real typing takes, so the native
    * 'input' event this fires drives checkTriggers() to open the @
@@ -2030,94 +2030,127 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     if (editorEl.querySelector('.tt-img')) toast(t(locale, 'img_copy_md_toast'), { key: 'image-copy-md' })
   }
 
-  // --- copy-options menu (🗐 toolbar button) --------------------------------
-  // A static 3-item dropdown (plain / formatted / markdown), anchored to the
-  // toolbar button rather than the caret — reuses the atref/template-picker
-  // dropdown's visual styling (.tt-atref-dropdown/-list/-item) and row
-  // mechanics (select-list.ts's paintSelection/clampMove/selectableRowProps),
-  // now including their keyboard nav (Up/Down + Enter), and clamped to the
-  // viewport on open the same way ui/context-menu.ts and
-  // ui/backlinks-panel.ts's popovers are.
+  // --- "More" menu (⋯ toolbar button) -------------------------------------
+  // One dropdown for the toolbar's less-used actions, so they take one button
+  // instead of three: Insert (template, reference) and Copy (plain /
+  // formatted / markdown), each under a group header. Anchored to the
+  // toolbar button rather than the caret; reuses the atref/template-picker
+  // dropdown's styling (.tt-atref-dropdown/-list/-item/-group-header) and
+  // row mechanics (select-list.ts's paintSelection/clampMove/
+  // selectableRowProps, keyboard nav Up/Down + Enter), clamped to the
+  // viewport like ui/context-menu.ts's popovers.
+  //
+  // The button is read-only safe (ui/readonly-lock.ts lets it through) since
+  // copying only reads. The Insert group is left out of a read-only editor
+  // instead of being shown and refused, so the menu then holds Copy and Help.
+  // Help lives here rather than as its own toolbar button so the toolbar fits
+  // one row in half of a split window (F1 opens Help on the pane's tab).
 
-  let copyMenuEl: HTMLElement | null = null
-  let copyMenuListEl: HTMLElement | null = null
-  let copyMenuOptions: [string, () => void][] = []
-  let copyMenuSelected = 0
+  type MoreMenuOption = { label: string; hint?: string; run(): void }
 
-  function closeCopyMenu(): void {
-    if (!copyMenuEl) return
-    copyMenuEl.remove()
-    copyMenuEl = null
-    copyMenuListEl = null
-    copyMenuOptions = []
-    document.removeEventListener('mousedown', onCopyMenuDocMousedown, true)
-    document.removeEventListener('keydown', onCopyMenuKeydown, true)
+  let moreMenuEl: HTMLElement | null = null
+  let moreMenuListEl: HTMLElement | null = null
+  let moreMenuOptions: MoreMenuOption[] = []
+  let moreMenuSelected = 0
+
+  function closeMoreMenu(): void {
+    if (!moreMenuEl) return
+    moreMenuEl.remove()
+    moreMenuEl = null
+    moreMenuListEl = null
+    moreMenuOptions = []
+    document.removeEventListener('mousedown', onMoreMenuDocMousedown, true)
+    document.removeEventListener('keydown', onMoreMenuKeydown, true)
   }
 
-  function onCopyMenuDocMousedown(e: MouseEvent): void {
-    if (copyMenuEl?.contains(e.target as Node)) return
-    closeCopyMenu()
+  // Close first, then run: an Insert action opens the template or @ picker,
+  // which must not find this menu (or its capturing listeners) still live.
+  function commitMoreMenu(option: MoreMenuOption | undefined): void {
+    closeMoreMenu()
+    option?.run()
   }
 
-  function onCopyMenuKeydown(e: KeyboardEvent): void {
+  function onMoreMenuDocMousedown(e: MouseEvent): void {
+    if (moreMenuEl?.contains(e.target as Node)) return
+    closeMoreMenu()
+  }
+
+  function onMoreMenuKeydown(e: KeyboardEvent): void {
     // Same reasoning as panes.ts's pane-module dropdown: an async modal can
     // appear while this menu is still open, and this is a capturing document
-    // listener — without this guard Enter here would copy to the clipboard
-    // behind the modal.
+    // listener — without this guard Enter here would act behind the modal.
     if (blockedByModal()) return
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeCopyMenu(); return }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMoreMenu(); return }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      copyMenuSelected = clampMove(copyMenuSelected, e.key === 'ArrowDown' ? 1 : -1, copyMenuOptions.length)
-      paintSelection(copyMenuListEl, '.tt-atref-item', copyMenuSelected)
+      e.stopPropagation()
+      moreMenuSelected = clampMove(moreMenuSelected, e.key === 'ArrowDown' ? 1 : -1, moreMenuOptions.length)
+      paintSelection(moreMenuListEl, '.tt-atref-item', moreMenuSelected)
       return
     }
     if (e.key === 'Enter') {
+      // stopPropagation: focus is still in the editor, and "Template…" opens
+      // the template picker synchronously — this same Enter must not reach
+      // the editor (or the picker) and commit its first row too.
       e.preventDefault()
-      const option = copyMenuOptions[copyMenuSelected]
-      if (option) { option[1](); closeCopyMenu() }
+      e.stopPropagation()
+      commitMoreMenu(moreMenuOptions[moreMenuSelected])
     }
   }
 
-  function openCopyMenu(anchor: HTMLElement): void {
-    closeCopyMenu()
-    copyMenuOptions = [
-      [t(locale, 'editor_copy_option_plain'), copyPlain],
-      [t(locale, 'editor_copy_option_formatted'), copyFormatted],
-      [t(locale, 'editor_copy_option_markdown'), copyMarkdown],
+  function openMoreMenu(anchor: HTMLElement): void {
+    closeMoreMenu()
+    const insert: MoreMenuOption[] = editorsReadOnly ? [] : [
+      { label: t(locale, 'editor_more_template'), hint: '/', run: openTemplatePicker },
+      { label: t(locale, 'editor_more_reference'), hint: '@', run: insertAtTrigger },
     ]
-    copyMenuSelected = 0
+    const copy: MoreMenuOption[] = [
+      { label: t(locale, 'editor_copy_option_plain'), run: copyPlain },
+      { label: t(locale, 'editor_copy_option_formatted'), run: copyFormatted },
+      { label: t(locale, 'editor_copy_option_markdown'), run: copyMarkdown },
+    ]
+    const help: MoreMenuOption[] = [{ label: t(locale, 'editor_help_title'), run: () => showHelp(locale, { tab: 'editor' }) }]
+    moreMenuOptions = [...insert, ...copy, ...help]
+    moreMenuSelected = 0
+    const row = (option: MoreMenuOption): HTMLElement => {
+      const i = moreMenuOptions.indexOf(option)
+      return el(
+        'div',
+        selectableRowProps({
+          class: option.hint ? 'tt-atref-item tt-more-menu-item' : 'tt-atref-item',
+          selected: i === moreMenuSelected,
+          onCommit: () => commitMoreMenu(option),
+          onHover: () => { moreMenuSelected = i; paintSelection(moreMenuListEl, '.tt-atref-item', moreMenuSelected) },
+        }),
+        ...(option.hint
+          ? [el('span', {}, option.label), el('kbd', { class: 'tt-more-menu-hint' }, option.hint)]
+          : [option.label])
+      )
+    }
+    const group = (title: string, options: MoreMenuOption[]): HTMLElement[] =>
+      options.length ? [el('div', { class: 'tt-atref-group-header' }, title), ...options.map(row)] : []
     const listEl = el(
       'div',
       { class: 'tt-atref-list' },
-      ...copyMenuOptions.map(([label, action], i) =>
-        el(
-          'div',
-          selectableRowProps({
-            class: 'tt-atref-item',
-            selected: i === copyMenuSelected,
-            onCommit: () => { action(); closeCopyMenu() },
-            onHover: () => { copyMenuSelected = i; paintSelection(copyMenuListEl, '.tt-atref-item', copyMenuSelected) },
-          }),
-          label
-        )
-      )
+      ...group(t(locale, 'editor_more_group_insert'), insert),
+      ...group(t(locale, 'editor_more_group_copy'), copy),
+      ...group(t(locale, 'editor_more_group_help'), help)
     )
-    copyMenuListEl = listEl
-    copyMenuEl = el('div', { class: 'tt-atref-dropdown' }, listEl)
-    document.body.appendChild(copyMenuEl)
+    moreMenuListEl = listEl
+    moreMenuEl = el('div', { class: 'tt-atref-dropdown' }, listEl)
+    document.body.appendChild(moreMenuEl)
     const rect = anchor.getBoundingClientRect()
-    copyMenuEl.style.left = `${rect.left}px`
-    copyMenuEl.style.top = `${rect.bottom}px`
+    moreMenuEl.style.left = `${rect.left}px`
+    moreMenuEl.style.top = `${rect.bottom}px`
 
     // Clamp to the viewport — a toolbar button near the right/bottom edge of
     // a pane (the common case for the right pane in split view) would
     // otherwise open partly or fully off-screen. Same pattern as
     // ui/context-menu.ts/ui/backlinks-panel.ts's popovers.
-    clampToViewport(copyMenuEl)
+    clampToViewport(moreMenuEl)
 
-    document.addEventListener('mousedown', onCopyMenuDocMousedown, true)
-    document.addEventListener('keydown', onCopyMenuKeydown, true)
+    document.addEventListener('mousedown', onMoreMenuDocMousedown, true)
+    document.addEventListener('keydown', onMoreMenuKeydown, true)
   }
 
   // --- event handlers --------------------------------------------------------
@@ -3009,11 +3042,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     toolbarButton(icon('image'), t(locale, 'editor_image_title'), () => openImagePicker()),
     toolbarButton(icon('clearFmt'), t(locale, 'editor_clear_format_title'), () => clearFormatting()),
     el('span', { class: 'tt-editor-toolbar-spacer' }),
-    toolbarButton(icon('template'), t(locale, 'editor_templates_title'), () => openTemplatePicker()),
-    toolbarButton(icon('at'), t(locale, 'editor_insert_ref_title'), () => insertAtTrigger()),
-    // Read-only safe: ui/readonly-lock.ts refuses every other toolbar button in a read-only tab.
-    toolbarButton(icon('copy'), t(locale, 'editor_copy_options_title'), (btn) => openCopyMenu(btn), 'tt-editor-btn-readonly-safe'),
-    toolbarButton(icon('help'), t(locale, 'editor_help_title'), () => showHelp(locale, { tab: 'editor' }), 'tt-editor-btn-readonly-safe')
+    // Read-only safe: ui/readonly-lock.ts refuses every other toolbar button in a read-only tab
+    // (the menu itself drops its Insert group there, so only Copy stays reachable).
+    toolbarButton(icon('more'), t(locale, 'editor_more_title'), (btn) => openMoreMenu(btn), 'tt-editor-btn-readonly-safe')
   )
 
   const root = el('div', { class: 'tt-editor' }, toolbar, editorEl, imageInput)
@@ -3461,7 +3492,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     // Flush, don't drop — see flushChange(). Runs before the listeners come
     // off so ordering matches a normal debounce firing.
     flushChange()
-    closeCopyMenu()
+    closeMoreMenu()
     pendingLinkModal?.close()
     undoStack.destroy()
     unregisterUndo(editorEl)

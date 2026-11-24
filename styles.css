@@ -192,6 +192,10 @@ body { font-family: "TT Emoji", Bahnschrift, -apple-system, "Segoe UI", Roboto, 
 :root { --hover-soft: rgba(var(--accent-rgb), .08); --hover: rgba(var(--accent-rgb), .12); --selected: rgba(var(--accent-rgb), .2); --card-hover: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
 /* Spacing scale for new rules, and the two row paddings: a list item (menus, pickers, sidebar, Preferences lists) and a card row (risks, milestones). */
 :root { --sp-1: .25rem; --sp-2: .5rem; --sp-3: .75rem; --sp-4: 1rem; --row-pad: .4rem .6rem; --card-row-pad: .5rem .6rem; --state-bar: 3px; }
+/* Control heights, three tiers (rem, so they track the text-size setting): the app header (--ctl-h-lg), everything a
+   pane shows in its bars and toolbars (--ctl-h), and the actions inside a row, card or list (--ctl-h-sm, 24px at the
+   default size: the WCAG 2.2 minimum target). Icon-only buttons are squares at their tier. */
+:root { --ctl-h-lg: 2rem; --ctl-h: 1.75rem; --ctl-h-sm: 1.6rem; }
 /* The card recipe, once: panel fill, soft shadow, 6px radius, a wash on hover. Tasks, risks, milestones and org boxes are cards; a new card-like item adds `.tt-card` (or joins this list) and keeps only what is its own (border, padding, layout). Its keyboard focus is the shared inset ring further down. */
 .tt-card, .tt-kanban-card, .tt-org-box, .tt-risk-row, .tt-milestone-row { background: var(--panel); border-radius: var(--r-md); box-shadow: var(--shadow-card); }
 .tt-card { border: 1px solid transparent; padding: var(--card-row-pad); }
@@ -255,7 +259,7 @@ body { background: var(--bg); color: var(--fg); }
   /* One height for every header control (buttons, pills, app name, search box) so the
      bar reads as a single row; rem, so it tracks the text-size setting. Shape: square
      (4px) buttons are actions, fully rounded pills are status chips (save, team, due). */
-  --tt-header-ctl-h: 2rem;
+  --tt-header-ctl-h: var(--ctl-h-lg);
 }
 .tt-header-left, .tt-header-right { display: flex; align-items: center; gap: .75rem; }
 /* headerLeft (app name + search bar) takes its whole 1fr column and shrinks
@@ -365,7 +369,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header-team-indicator:focus-visible .tt-header-team-indicator-caret { opacity: 1; }
 
 /* flex, not inline-flex: a block-level box takes the (capped) width of .tt-header-center, so the indicator's label can ellipsize instead of the pill overflowing into the save pill beside it. */
-.tt-header-team-indicator-group { display: flex; align-items: center; gap: .4rem; min-width: 0; max-width: 100%; }
+/* The inline padding is the focus ring's reach (2px offset + 2px ring): .tt-header-center clips its overflow, and its block padding only covers the top and bottom, so without it the ring around the due pill (first) and the team pill (last) was cut at the slot's sides. */
+.tt-header-team-indicator-group { display: flex; align-items: center; gap: .4rem; min-width: 0; max-width: 100%; box-sizing: border-box; padding-inline: 4px; }
 
 .tt-header-due-summary {
   display: none; align-items: center; justify-content: center;
@@ -418,7 +423,6 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header.tt-header-compact .tt-search-wrap,
 .tt-header.tt-header-compact .tt-header-team-indicator-group,
 .tt-header.tt-header-compact .tt-btn-promo,
-.tt-header.tt-header-compact .tt-btn-fullscreen,
 .tt-header.tt-header-compact .tt-btn-help {
   display: none;
 }
@@ -474,6 +478,22 @@ body { background: var(--bg); color: var(--fg); }
 .tt-icon { display: inline-flex; align-items: center; justify-content: center; line-height: 0; vertical-align: middle; }
 /* A button holding an icon (alone, or ahead of its label) centres it in both axes. Left as an inline-block/block box, the icon's baseline alignment inside the button's line box sat it ~1px low (pane back/forward/split). :where() keeps it at (0,1,0) so display:none rules (compact header) still win. */
 .tt-btn:where(:has(> .tt-icon)) { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; }
+/* Tier 2 (--ctl-h) is every icon-only button's default (iconButton() adds .tt-btn-icon); the header's own rule below
+   lifts its buttons to tier 1, and the row-action list further down drops those to tier 3. */
+.tt-btn-icon { box-sizing: border-box; height: var(--ctl-h); min-width: var(--ctl-h); padding: 0; }
+/* Text buttons in a pane's bars and toolbars share the tier-2 height, so a row of them lines up with its icon buttons. */
+:is(.tt-pane-bar, .tt-person-header, .tt-editor-toolbar, .tt-people-toolbar, .tt-kanban-toolbar, .tt-milestone-toolbar, .tt-risk-toolbar) .tt-btn {
+  box-sizing: border-box; height: var(--ctl-h); min-width: var(--ctl-h);
+}
+:where(.tt-pane-bar, .tt-person-header, .tt-editor-toolbar, .tt-people-toolbar, .tt-kanban-toolbar, .tt-milestone-toolbar, .tt-risk-toolbar) .tt-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+}
+/* Tier 3: actions inside a row, card or list. (0,2,0) so it beats each one's own single-class rule wherever that sits. */
+.tt-btn-icon:is(.tt-team-edit-btn, .tt-milestone-expand-btn, .tt-milestone-delete-btn, .tt-risk-expand-btn, .tt-risk-delete-btn,
+  .tt-kanban-edit-btn, .tt-kanban-col-delete-btn, .tt-kanban-zone-trash, .tt-people-more-btn, .tt-risks-clear-closed-btn,
+  .tt-calendar-nav-btn, .tt-prefs-template-up-btn, .tt-prefs-template-down-btn, .tt-prefs-template-edit-btn, .tt-prefs-template-dup-btn) {
+  height: var(--ctl-h-sm); min-width: var(--ctl-h-sm); padding: 0;
+}
 /* Text action buttons in the panes: accent-tinted like the modal's secondary buttons. (The kanban "add card" keeps its dashed muted look.) */
 :where(.tt-kanban-add-column-btn, .tt-kanban-edit-tags-btn, .tt-daily-calendar-today-btn):not(:disabled) { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); color: var(--accent); }
 :where(.tt-kanban-add-column-btn, .tt-kanban-edit-tags-btn, .tt-daily-calendar-today-btn):not(:disabled):hover { background: var(--hover); }
@@ -767,7 +787,7 @@ body { background: var(--bg); color: var(--fg); }
   overflow: hidden; overflow-wrap: anywhere;
 }
 /* Takes no room of its own: a real button box, but its negative margin (its width plus the flex gap) cancels its footprint, so it floats over the name's tail on hover, on the row's own fill so the text does not show through. */
-.tt-team-edit-btn { position: relative; flex: none; width: 1.5rem; margin-left: -1.9rem; padding: .2rem 0; opacity: 0; border: none; background: var(--row-bg); box-shadow: -.5rem 0 .4rem var(--row-bg); }
+.tt-team-edit-btn { position: relative; flex: none; width: var(--ctl-h-sm); margin-left: calc(-1 * var(--ctl-h-sm) - .4rem); opacity: 0; border: none; background: var(--row-bg); box-shadow: -.5rem 0 .4rem var(--row-bg); }
 .tt-team-item:hover .tt-team-edit-btn, .tt-team-edit-btn:focus { opacity: 1; }
 .tt-sidebar-heading { padding: .7rem .75rem .25rem; font-size: .78rem; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
 /* A quiet row, not a bordered bar: it is the last entry of the list it adds to, and only takes a fill on hover. */
@@ -867,18 +887,17 @@ body { background: var(--bg); color: var(--fg); }
   .tt-pane-tab { padding: 0 .85rem; }
   .tt-pane-tab:not(.active) .tt-pane-tab-label { display: inline; }
 }
-/* Favorite star: same square-ish icon button as print/split; filled state tinted with the accent. */
-.tt-pane-fav-btn {
-  flex: none; display: inline-flex; align-items: center; justify-content: center;
-  min-width: 2rem; padding-left: 0; padding-right: 0;
-}
+/* Favorite star: the same tier-2 square as split; filled state tinted with the accent. */
+.tt-pane-fav-btn { flex: none; }
 .tt-pane-fav-btn[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); }
+/* Split view: tinted like a set favorite, so the filled half (the other pane, on screen) reads in the accent. Not aria-pressed: the label already changes with the state, and a pressed state on top would be read twice. */
+.tt-pane-split-btn[data-split='true'] { color: var(--accent); border-color: var(--accent); }
 .tt-pane-fav-btn:disabled { opacity: .5; cursor: not-allowed; }
 .tt-pane-title-trigger-wrap { position: relative; min-width: 0; display: flex; }
 .tt-pane-title-trigger {
   display: inline-flex; align-items: center; gap: .3rem; min-width: 0;
   background: transparent; border: none; color: var(--fg); cursor: pointer;
-  padding: .2rem .35rem; border-radius: var(--r-sm); font-family: var(--font-display);
+  box-sizing: border-box; height: var(--ctl-h); padding: 0 .35rem; border-radius: var(--r-sm); font-family: var(--font-display);
   font-weight: 700; font-size: 1rem;
 }
 .tt-pane-title-trigger:not(:disabled):hover { background: var(--hover); color: var(--accent); }
@@ -950,10 +969,11 @@ body { background: var(--bg); color: var(--fg); }
 .tt-palette-item:hover { background: var(--hover); }
 .tt-palette-item.selected, .tt-palette-item.selected:hover { background: var(--selected); }
 .tt-palette-label { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tt-palette-due { flex: none; color: var(--muted); font-size: .85rem; white-space: nowrap; }
+.tt-palette-due, .tt-palette-hint { flex: none; color: var(--muted); font-size: .85rem; white-space: nowrap; }
+.tt-palette-hint { font-family: inherit; }
 .tt-palette-team { flex: none; max-width: 10rem; color: var(--muted); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* --muted is tuned for the page, and dipped under 4.5:1 on the --selected wash. */
-.tt-palette-item.selected .tt-palette-due, .tt-palette-item.selected .tt-palette-team { color: color-mix(in srgb, var(--muted) 70%, var(--fg)); }
+.tt-palette-item.selected .tt-palette-due, .tt-palette-item.selected .tt-palette-team, .tt-palette-item.selected .tt-palette-hint { color: color-mix(in srgb, var(--muted) 70%, var(--fg)); }
 .tt-palette-remove {
   flex: none; width: 1.5rem; height: 1.5rem; padding: 0; line-height: 1;
   background: transparent; color: var(--fg); border: none; border-radius: var(--r-sm); cursor: pointer; opacity: .6;
@@ -1073,7 +1093,7 @@ body { background: var(--bg); color: var(--fg); }
   background: var(--panel); border-bottom: 1px solid var(--border); flex: none; flex-wrap: wrap;
 }
 .tt-editor-btn {
-  min-width: 2rem; height: 1.9rem; box-sizing: border-box; padding: 0 .4rem; text-align: center;
+  min-width: var(--ctl-h); height: var(--ctl-h); box-sizing: border-box; padding: 0 .15rem; text-align: center;
   display: inline-flex; align-items: center; justify-content: center;
 }
 .tt-editor-btn-bold { font-weight: 700; }
@@ -1148,7 +1168,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-cb-controls { position: absolute; z-index: 6; display: flex; gap: 2px; }
 .tt-cb-controls[hidden] { display: none; }
 .tt-cb-btn {
-  min-width: 1.7rem; height: 1.7rem; padding: 0 .3rem; font-size: .95rem; line-height: 1;
+  box-sizing: border-box; min-width: var(--ctl-h-sm); height: var(--ctl-h-sm); padding: 0; font-size: .95rem; line-height: 1;
   background: var(--panel); color: var(--fg); border: 1px solid var(--border);
   border-radius: var(--r-sm); cursor: pointer;
 }
@@ -1192,6 +1212,9 @@ body { background: var(--bg); color: var(--fg); }
 .tt-atref-item:hover { background: var(--hover); }
 .tt-atref-item.selected, .tt-atref-item.selected:hover { background: var(--selected); }
 .tt-atref-group-header { padding: .3rem .6rem .15rem; font-size: .8rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
+/* The editor's More menu: an Insert row carries its typed shortcut (/ or @) at the right edge. */
+.tt-more-menu-item { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-3); }
+.tt-more-menu-hint { font: inherit; font-size: .8rem; color: var(--muted); }
 .tt-templates-empty { color: var(--muted); cursor: default; }
 .tt-templates-empty:hover { background: none; }
 
@@ -1298,7 +1321,7 @@ body { background: var(--bg); color: var(--fg); }
   background: color-mix(in srgb, var(--accent) 11%, var(--panel)); border-bottom: 1px solid var(--border);
 }
 .tt-calendar-month-label { font-family: var(--font-display); font-weight: 600; font-size: 1rem; text-align: center; flex: 1; }
-.tt-calendar-nav-btn { min-width: 1.8rem; padding: .2rem .3rem; border-color: transparent; }
+.tt-calendar-nav-btn { border-color: transparent; }
 .tt-calendar-weekdays, .tt-calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); margin: 0 .45rem; }
 .tt-calendar-weekdays { margin-top: .3rem; }
 .tt-calendar-weekday { text-align: center; font-family: var(--font-data); font-size: .6rem; text-transform: uppercase; letter-spacing: .05em; color: color-mix(in srgb, var(--muted) 60%, var(--fg)); padding: .15rem 0 .25rem; }
@@ -1377,8 +1400,9 @@ body { background: var(--bg); color: var(--fg); }
   border: 1px solid var(--border);
   cursor: grab; position: relative; z-index: 1;
 }
-/* Overdue 1:1: the same danger dot as .tt-due-dot, tucked inside the top-right corner rather than on the border. */
+/* A due 1:1: the same dot as .tt-due-dot (red when late, brass when due soon), tucked inside the top-right corner rather than on the border. */
 .tt-org-due { position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
+.tt-org-due.soon { background: var(--brass); }
 .tt-org-name { font-family: var(--font-display); font-weight: 700; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; padding: 0 .9rem; box-sizing: border-box; }
 /* line-height/padding are load-bearing, not spacing taste: `overflow: hidden`
    (needed for the ellipsis) clips at the padding box, and both the synthesized
@@ -1392,7 +1416,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-org-box.tt-people-drop-child { background: rgba(var(--accent-rgb), .18); }
 
 /* The ⋯ button floats over the same corner and shows on hover, or when the button itself has focus: the box takes focus on open, which must not reveal it (the keyboard reaches the menu with Space on the box). */
-.tt-people-more-btn { position: absolute; bottom: 2px; right: 6px; padding: .1rem .3rem; border: none; background: transparent; border-radius: var(--r-sm); opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+.tt-people-more-btn { position: absolute; bottom: 2px; right: 6px; border: none; background: transparent; border-radius: var(--r-sm); opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
 .tt-people-more-btn:hover { background: var(--hover); }
 .tt-org-box:hover .tt-people-more-btn, .tt-people-more-btn:focus-visible { opacity: 1; }
 /* Connector lines: the parent's children wrapper draws the trunk down to the
@@ -1445,7 +1469,8 @@ body { background: var(--bg); color: var(--fg); }
    add/delete cluster together at the head's trailing edge instead of
    space-between's even spread across every child. */
 .tt-kanban-col-head .tt-kanban-add-btn { margin-left: auto; }
-.tt-kanban-add-btn { border: 1px dashed var(--border); background: transparent; color: var(--muted); border-radius: var(--r-md); padding: .2rem .5rem; font-size: .82rem; cursor: pointer; white-space: nowrap; flex: none; }
+/* Tier 3 like the column's trash beside it, so every column head is the same height whether or not it has one. */
+.tt-kanban-add-btn { box-sizing: border-box; height: var(--ctl-h-sm); display: inline-flex; align-items: center; border: 1px dashed var(--border); background: transparent; color: var(--muted); border-radius: var(--r-md); padding: 0 .5rem; font-size: .82rem; cursor: pointer; white-space: nowrap; flex: none; }
 .tt-kanban-add-btn:hover { color: var(--fg); border-color: var(--accent); }
 /* Invisible height-matcher in the Done/Cancelled head, which has no add button of its own. */
 .tt-kanban-head-spacer { visibility: hidden; pointer-events: none; }
@@ -1464,7 +1489,7 @@ body { background: var(--bg); color: var(--fg); }
 }
 .tt-kanban-col-name:hover::after { opacity: .6; }
 .tt-kanban-col-rename-input { font: inherit; font-weight: 700; width: 100%; }
-.tt-kanban-col-delete-btn { opacity: .38; border: none; background: transparent; cursor: pointer; font-size: .85rem; padding: .1rem .3rem; flex: none; }
+.tt-kanban-col-delete-btn { opacity: .38; border: none; background: transparent; cursor: pointer; flex: none; }
 .tt-kanban-col-delete-btn:hover { opacity: 1; }
 
 /* Grip is the sole drag source for column reorder (wireColumnHeaderDrag) —
@@ -1503,7 +1528,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban.dragging .tt-kanban-dropzone { bottom: 44px; }
 .tt-kanban-empty { color: var(--muted); padding: .5rem; font-size: .85rem; }
 .tt-kanban-zone-label { display: flex; align-items: center; justify-content: space-between; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 .3rem; flex: none; }
-.tt-kanban-zone-trash { border: none; background: transparent; opacity: .38; cursor: pointer; font-size: 1.15rem; padding: .1rem .3rem; }
+.tt-kanban-zone-trash { border: none; background: transparent; opacity: .38; cursor: pointer; }
 .tt-kanban-zone-trash:hover { opacity: 1; }
 .tt-kanban-divider { border-top: 1px dashed var(--border); margin: .5rem 0 .4rem; flex: none; }
 
@@ -1560,7 +1585,7 @@ body { background: var(--bg); color: var(--fg); }
    "selection lost" after closing the edit modal or context menu. */
 .tt-kanban-card-head { position: relative; }
 /* Hidden until the card is hovered (or the button focused), so it takes no room at rest; it floats over the title's end with the card's own fill behind it. */
-.tt-kanban-edit-btn { position: absolute; top: .25rem; right: .4rem; opacity: 0; border: none; background: var(--card-hover); border-radius: var(--r-sm); padding: .2rem .3rem; cursor: pointer; transition: opacity var(--dur-fast) var(--ease); }
+.tt-kanban-edit-btn { position: absolute; top: .25rem; right: .4rem; opacity: 0; border: none; background: var(--card-hover); border-radius: var(--r-sm); cursor: pointer; transition: opacity var(--dur-fast) var(--ease); }
 .tt-kanban-card:hover .tt-kanban-edit-btn, .tt-kanban-edit-btn:focus { opacity: 1; }
 .tt-kanban-card.tt-kanban-drop-before { box-shadow: inset 0 2px 0 0 var(--accent); }
 .tt-kanban-card.tt-kanban-drop-after { box-shadow: inset 0 -2px 0 0 var(--accent); }
@@ -1724,7 +1749,7 @@ body { background: var(--bg); color: var(--fg); }
    row depending on whether it has a mention. */
 .tt-milestone-row .tt-backlinks-chip, .tt-milestone-row .tt-backlinks-chip-slot { flex: none; width: 2.6rem; text-align: center; }
 /* Resting .38 rather than 0 — see the matching note on the risk row buttons. */
-.tt-milestone-expand-btn, .tt-milestone-delete-btn { opacity: .38; flex: none; padding: .15rem .45rem; font-size: 1.3rem; line-height: 1; border: none; background: transparent; }
+.tt-milestone-expand-btn, .tt-milestone-delete-btn { opacity: .38; flex: none; border: none; background: transparent; }
 .tt-milestone-row:hover .tt-milestone-expand-btn, .tt-milestone-expand-btn:focus,
 .tt-milestone-row:hover .tt-milestone-delete-btn, .tt-milestone-delete-btn:focus { opacity: 1; }
 .tt-milestone-row.tt-milestone-done-row .tt-milestone-title-input { text-decoration: line-through; color: var(--muted); }
@@ -1819,7 +1844,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-risk-header-plan, .tt-risk-plan-select { flex: none; width: 8rem; }
 /* The header's Exposure column heads the gutter, so it comes first; its width plus the header's padding and gap lands the Title where the rows' padded content starts. */
 .tt-risk-header-exposure { order: -1; position: relative; width: calc(var(--risk-exp-w) - .3rem + 1px); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tt-risk-header-spacer, .tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { flex: none; width: 2.2rem; padding: .15rem .3rem; }
+/* One column width for the row's actions and the header's spacers above them, so the columns stay aligned. */
+.tt-risk-header-spacer, .tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { flex: none; width: var(--ctl-h-sm); }
 /* The chip (or its placeholder, when the row has no mentions) is a fixed-
    width column like the header spacers above it — without `flex: none` it
    sizes to its own content and, on rows where it's absent, `.tt-risk-header-
@@ -1955,13 +1981,14 @@ select option { background: var(--bg); color: var(--fg); }
    builders) meant these actions were invisible without a pointer *and*
    skipped by Tab — no route at all. The header already reserves their width
    with three blank spacers, so hiding them bought no layout, only mystery. */
-.tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { opacity: .38; border: none; background: transparent; font-size: 1.3rem; line-height: 1; }
+.tt-risk-expand-btn, .tt-risk-close-btn, .tt-risk-delete-btn { opacity: .38; border: none; background: transparent; }
 .tt-risk-row:hover .tt-risk-expand-btn, .tt-risk-expand-btn:focus,
 .tt-risk-row:hover .tt-risk-close-btn, .tt-risk-close-btn:focus,
 .tt-risk-row:hover .tt-risk-delete-btn, .tt-risk-delete-btn:focus { opacity: 1; }
 /* Close / Reopen: the icon sits quiet in its column; on row hover or focus the word appears beside it and the button gets a green outline. The slot is a fixed width, so nothing shifts when the label fades in. */
 .tt-risk-header-close, .tt-risk-close-btn { width: 5.6rem; }
-.tt-risk-close-btn, .tt-risk-reopen-btn { display: inline-flex; align-items: center; justify-content: flex-start; gap: .35rem; border: 1px solid transparent; color: var(--ok-text); }
+/* Icon and label, so not a tier-3 square, but the tier-3 height of the row actions beside it. */
+.tt-risk-close-btn, .tt-risk-reopen-btn { box-sizing: border-box; height: var(--ctl-h-sm); padding: 0 .3rem; display: inline-flex; align-items: center; justify-content: flex-start; gap: .35rem; border: 1px solid transparent; color: var(--ok-text); }
 .tt-risk-btn-label { font-size: .8rem; opacity: 0; transition: opacity var(--dur-fast) var(--ease); white-space: nowrap; }
 .tt-risk-row:hover .tt-risk-btn-label, .tt-risk-close-btn:focus-visible .tt-risk-btn-label, .tt-risk-reopen-btn:focus-visible .tt-risk-btn-label { opacity: 1; }
 .tt-risk-row:hover .tt-risk-close-btn, .tt-risk-row:hover .tt-risk-reopen-btn { border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
@@ -2039,7 +2066,7 @@ select option { background: var(--bg); color: var(--fg); }
 .tt-risks-closed-summary-row { display: flex; align-items: center; gap: .35rem; }
 .tt-risks-closed-arrow { display: inline-block; flex: none; transition: transform var(--dur-fast) var(--ease); }
 .tt-risks-closed[open] .tt-risks-closed-arrow { transform: rotate(90deg); }
-.tt-risks-clear-closed-btn { margin-left: auto; flex: none; border: none; background: transparent; font-size: 1rem; opacity: .38; }
+.tt-risks-clear-closed-btn { margin-left: auto; flex: none; border: none; background: transparent; opacity: .38; }
 .tt-risks-clear-closed-btn:hover, .tt-risks-clear-closed-btn:focus { opacity: 1; }
 .tt-risks-closed.tt-risks-closed-empty { display: none; }
 .tt-risks-closed .tt-risk-row-closed { gap: .6rem; opacity: .75; }
@@ -2409,6 +2436,8 @@ select option { background: var(--bg); color: var(--fg); }
 
 /* Add buttons (people, milestones, risks, and the one an empty pane offers) are the one filled button of their toolbar; expand-all is quiet and only shows a wash on hover. */
 .tt-people-add-btn, .tt-milestone-add-btn, .tt-risk-add-btn, .tt-person-header-one-on-one-btn, .tt-empty-state-action { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; font-size: .9rem; padding: .3rem .7rem; }
+/* In a toolbar (or the person header) the tier-2 rule sets the height; side padding only, so the label centres. */
+:is(.tt-people-toolbar, .tt-milestone-toolbar, .tt-risk-toolbar, .tt-person-header) :is(.tt-people-add-btn, .tt-milestone-add-btn, .tt-risk-add-btn, .tt-person-header-one-on-one-btn, .tt-milestone-expand-all-btn, .tt-risk-expand-all-btn) { padding-block: 0; }
 .tt-people-add-btn:hover:not(:disabled), .tt-milestone-add-btn:hover:not(:disabled), .tt-risk-add-btn:hover:not(:disabled), .tt-person-header-one-on-one-btn:hover:not(:disabled), .tt-empty-state-action:hover:not(:disabled) { color: var(--on-accent); opacity: .9; }
 .tt-milestone-expand-all-btn, .tt-risk-expand-all-btn { border-color: transparent; background: transparent; color: var(--muted); font-size: .9rem; padding: .3rem .55rem; }
 .tt-milestone-expand-all-btn:hover:not(:disabled), .tt-risk-expand-all-btn:hover:not(:disabled) { border-color: transparent; background: var(--hover); color: var(--accent); }

@@ -86,14 +86,20 @@ export function dueItemLabel(locale: Locale, item: DueItem): string {
   return item.kind === 'person' ? t(locale, 'due_one_on_one_title', { name: item.title }) : item.title
 }
 
+/** Where a due date stands on `today`: late, within the next `dueSoonDays` (today included), or not due yet. One rule for the due list, the badges and the org chart's marks. */
+export function dueState(date: string, today: string, dueSoonDays: number): 'overdue' | 'soon' | null {
+  if (date < today) return 'overdue'
+  return date <= addDaysIso(today, dueSoonDays) ? 'soon' : null
+}
+
 export function collectDueItems(doc: Doc, today: string): DueBuckets {
-  const cutoff = addDaysIso(today, doc.prefs.dueSoonDays)
   const overdue: DueItem[] = []
   const dueSoon: DueItem[] = []
 
   function classify(entry: DueItem): void {
-    if (entry.date < today) overdue.push(entry)
-    else if (entry.date <= cutoff) dueSoon.push(entry)
+    const state = dueState(entry.date, today, doc.prefs.dueSoonDays)
+    if (state === 'overdue') overdue.push(entry)
+    else if (state === 'soon') dueSoon.push(entry)
   }
 
   for (const team of doc.teams) {

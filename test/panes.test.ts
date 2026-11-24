@@ -1,7 +1,7 @@
 import { createShell, type Shell } from '../src/ui/shell'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
-import { createPaneManager, focusPaneBar, installArrowFallbackFocus, requestNewItem, NEW_ITEM_EVENT, installMouseHistoryButtons, navigateFocusedHistory, jumpFocusedHistoryToLatest, setFocusedPane, swapPaneSides, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager } from '../src/ui/panes'
+import { createPaneManager, focusPaneBar, installArrowFallbackFocus, requestNewItem, NEW_ITEM_EVENT, installMouseHistoryButtons, navigateFocusedHistory, jumpFocusedHistoryToLatest, setFocusedPane, swapPaneSides, openPaneModuleByIndex, invalidateUnsplitStash, teamHasHistory, openTeamDefaultLayout, restoreTeamLayout, type PaneManager, type AppPaneManager } from '../src/ui/panes'
 import { t, todayIso } from '../src/core/i18n'
 import { addDaysIso } from '../src/core/date'
 import { currentLoc } from '../src/core/nav'
@@ -30,7 +30,7 @@ function stubMatchMedia(): void {
   })) as unknown as typeof window.matchMedia
 }
 
-function setup(): { shell: Shell; store: Store; pm: PaneManager } {
+function setup(): { shell: Shell; store: Store; pm: AppPaneManager } {
   document.body.innerHTML = ''
   stubMatchMedia()
   const doc = createEmptyDocument('en-US')
@@ -577,6 +577,55 @@ test('clicking the unsplit button in pane 1\'s own bar expands pane 1, even when
 
   expect(store.doc.nav.split).toBe(false)
   expect(currentLoc(store.doc.nav.panes[0])).toEqual(locB)
+})
+
+test('the split button shows the layout and names what a click opens or closes', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => { d.nav.activeTeamId = 'T1' })
+  const split = (idx: 0 | 1): HTMLButtonElement => paneBtn(idx, 'tt-pane-split-btn')
+  const iconOf = (idx: 0 | 1): string | undefined => Array.from(split(idx).querySelector('.tt-icon')!.classList).find((c) => c.startsWith('tt-icon-') && c !== 'tt-icon-svg')
+  const risks = t('en-US', 'module_risks')
+  const milestones = t('en-US', 'module_milestones')
+
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
+  // Single view, nothing ever opened on the right.
+  expect(iconOf(0)).toBe('tt-icon-splitOpen')
+  expect(split(0).dataset.split).toBe('false')
+  expect(split(0).title).toBe(`${t('en-US', 'pane_split_open_empty_title')} (Alt+↑)`)
+
+  pm.toggleSplit()
+  pm.openInPane(1, { teamId: 'T1', ref: { kind: 'milestones' } })
+  // Split view: each bar fills the other pane's half and names it; no Alt+↑ (it follows focus, not this bar).
+  expect(iconOf(0)).toBe('tt-icon-splitShowRight')
+  expect(iconOf(1)).toBe('tt-icon-splitShowLeft')
+  expect(split(0).dataset.split).toBe('true')
+  expect(split(0).title).toBe(t('en-US', 'pane_split_close_right_title', { module: milestones }))
+  expect(split(1).title).toBe(t('en-US', 'pane_split_close_left_title', { module: risks }))
+  expect(split(0).getAttribute('aria-label')).toBe(split(0).title)
+
+  store.updateNav((d) => { d.nav.focusedPane = 0 })
+  pm.toggleSplit()
+  // Back to single view: the right pane still holds Milestones, so opening it says so.
+  expect(iconOf(0)).toBe('tt-icon-splitOpen')
+  expect(split(0).title).toBe(`${t('en-US', 'pane_split_open_title', { module: milestones })} (Alt+↑)`)
+})
+
+test('renaming the person the other pane shows updates this bar\'s split tooltip', () => {
+  const { store, pm } = setup()
+  addTeam(store, 'T1')
+  store.update((d) => {
+    d.nav.activeTeamId = 'T1'
+    d.teams[0]!.members.push({ id: 'p1', name: 'Ana', role: '', parentId: null, order: 0, notes: '' })
+  })
+  pm.toggleSplit()
+  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
+  pm.openInPane(1, { teamId: 'T1', ref: { kind: 'person', personId: 'p1', group: 'members' } })
+  expect(paneBtn(0, 'tt-pane-split-btn').title).toContain('Ana')
+
+  store.update((d) => { d.teams[0]!.members[0]!.name = 'Bia' }, { teamId: 'T1' })
+
+  expect(paneBtn(0, 'tt-pane-split-btn').title).toContain('Bia')
 })
 
 test('opening a module already shown in the other pane focuses that pane for real, surviving the click bubbling back up to the pane it started in (regression)', () => {
@@ -1135,15 +1184,12 @@ test('creating the first team hides the CTA and shows the pane shell', () => {
   expect(noTeams.style.display).toBe('none')
 })
 
-test('print button is disabled when the pane is empty and enabled once a module is open', () => {
-  const { store, pm } = setup()
-  expect(paneBtn(0, 'tt-pane-print-btn').disabled).toBe(true)
-
-  addTeam(store, 'T1')
-  store.update((d) => { d.nav.activeTeamId = 'T1' })
-  pm.openInPane(0, { teamId: 'T1', ref: { kind: 'risks' } })
-
-  expect(paneBtn(0, 'tt-pane-print-btn').disabled).toBe(false)
+test('the pane bar has no print button, and printing an empty pane opens no window', () => {
+  const { pm } = setup()
+  expect(document.querySelector('.tt-pane-bar-right')!.querySelectorAll('button')).toHaveLength(2) // favorite, split
+  const openSpy = vi.spyOn(window, 'open')
+  pm.printFocused()
+  expect(openSpy).not.toHaveBeenCalled()
 })
 
 test('module title/modules button are merged into one trigger: shows current module name, no separate title span, tracks disabled/title with team state', () => {
@@ -1166,7 +1212,7 @@ test('module title/modules button are merged into one trigger: shows current mod
   expect(document.querySelector('[data-pane-idx="0"] .tt-pane-title')).toBeNull()
 })
 
-test('print button opens a print window with a header (team/module) and a clone of the pane body, via DOM APIs', () => {
+test('printFocused opens a print window with a header (team/module) and a clone of the pane body, via DOM APIs', () => {
   const { store, pm } = setup()
   addTeam(store, 'T1')
   store.update((d) => { d.nav.activeTeamId = 'T1' })
@@ -1185,7 +1231,7 @@ test('print button opens a print window with a header (team/module) and a clone 
   const fakeWin = { document: fakeDoc, focus: vi.fn(), print: printSpy } as unknown as Window
   const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin)
 
-  paneBtn(0, 'tt-pane-print-btn').click()
+  pm.printFocused()
 
   expect(openSpy).toHaveBeenCalled()
   expect(headAppend).toHaveBeenCalled() // app stylesheet clone + print override style
@@ -1220,7 +1266,7 @@ test('printing keeps every select at its current choice, not its first option', 
   }
   vi.spyOn(window, 'open').mockReturnValue({ document: fakeDoc, focus: vi.fn(), print: vi.fn() } as unknown as Window)
 
-  paneBtn(0, 'tt-pane-print-btn').click()
+  pm.printFocused()
 
   const content = bodyAppend.mock.calls[0]![1] as HTMLElement
   expect(Array.from(content.querySelectorAll('select')).map((s) => s.value)).toEqual(['3', '2', '1'])
@@ -1244,7 +1290,7 @@ test('printing always hides the daily-notes calendar column — it\'s a navigati
   const fakeWin = { document: fakeDoc, focus: vi.fn(), print: printSpy } as unknown as Window
   vi.spyOn(window, 'open').mockReturnValue(fakeWin)
 
-  paneBtn(0, 'tt-pane-print-btn').click()
+  pm.printFocused()
 
   const styleEls = headAppend.mock.calls.map((c) => c[0] as HTMLStyleElement).filter((n) => n.tagName === 'STYLE')
   const printOverrideStyle = styleEls.find((s) => s.textContent?.includes('tt-daily-calendar-col'))
@@ -1916,6 +1962,43 @@ describe('switchPane and the item a pane remembers', () => {
     expect(document.activeElement).toBe(item('milestones-1'))
     navigateFocusedHistory(pm, store, -1)
     expect(document.activeElement).toBe(item('actions-3'))
+  })
+
+  // A stand-in org chart (one focusable box per person, the first focused on mount like the real one) and person page.
+  function registerPeople(pm: ReturnType<typeof createPaneManager>): void {
+    pm.registerModule('members', (container, _loc, ctx) => {
+      for (const id of ['p1', 'p2', 'p3']) {
+        const box = document.createElement('div')
+        box.setAttribute('data-item-id', id)
+        box.setAttribute('tabindex', '0')
+        container.appendChild(box)
+      }
+      if (ctx.paneIdx === ctx.store.doc.nav.focusedPane) (container.firstChild as HTMLElement).focus()
+    })
+    pm.registerModule('person', (container) => { container.appendChild(document.createElement('div')) })
+  }
+  const person = (personId: string) => ({ teamId: 'T', ref: { kind: 'person' as const, personId, group: 'members' as const } })
+
+  test('a person opened from outside the org chart (fast switch, due list, search) is where the chart lands on Back', () => {
+    const { store, pm } = split()
+    registerPeople(pm)
+    pm.toggleSplit()
+    pm.openInFocused({ teamId: 'T', ref: { kind: 'members' } })
+    expect(document.activeElement).toBe(item('p1'))
+    pm.openInFocused(person('p3'))
+    navigateFocusedHistory(pm, store, -1)
+    expect(document.activeElement).toBe(item('p3'))
+  })
+
+  test('the org chart in the other pane lands on the person just opened beside it', () => {
+    const { pm } = split()
+    registerPeople(pm)
+    pm.openBothPanes({ teamId: 'T', ref: { kind: 'actions' } }, { teamId: 'T', ref: { kind: 'members' } }, 1)
+    item('p2').focus()
+    pm.switchPane(0)
+    pm.openInFocused(person('p3'))
+    pm.switchPane(1)
+    expect(document.activeElement).toBe(item('p3'))
   })
 
   test('an item that is gone leaves the module where it put focus', () => {

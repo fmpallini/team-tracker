@@ -95,11 +95,15 @@ test('a task travels the board by keyboard, with focus on it the whole way', asy
   await expect(page.locator('.tt-kanban-card.status-done')).toHaveCount(1)
   await expect.poll(() => focused(page)).toBe('a0')
 
+  // Left lands on the To Do card nearest in height (which one depends on the layout); Ctrl+Down moves it one down.
   await page.keyboard.press('ArrowLeft')
   await expect.poll(() => focused(page)).not.toBe('a0')
+  const ids = await page.locator('.tt-kanban-card.status-todo').evaluateAll((cards) => cards.map((c) => c.getAttribute('data-item-id')))
+  const from = ids.indexOf(await focused(page))
+  expect(from).toBeLessThan(ids.length - 1)
   await page.keyboard.press('Control+ArrowDown')
   const moved = await focused(page)
-  await expect(page.locator('.tt-kanban-card.status-todo').nth(1)).toHaveAttribute('data-item-id', moved!)
+  await expect(page.locator('.tt-kanban-card.status-todo').nth(from + 1)).toHaveAttribute('data-item-id', moved!)
 })
 
 test('a commit keeps your row: the next arrow carries on from it', async ({ page }) => {
@@ -179,7 +183,9 @@ test('closing a dialog opened from a note gives the caret back', async ({ page }
   await page.keyboard.press('Control+End')
   await page.keyboard.type('!')
   const caret = await caretText(page)
+  // Editor help sits in the More menu.
   await page.locator('.tt-editor-btn-readonly-safe').last().click()
+  await page.locator('.tt-atref-item', { hasText: 'Editor help' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(editor).toBeFocused()

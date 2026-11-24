@@ -8,7 +8,7 @@ import type { LivePersister } from './core/live-persist'
 import { sharedLiveDb } from './core/live-db'
 import { holdDocument, pruneStaleCopies } from './core/browser-copies'
 import { reconcileOpen, type OpenedDocument } from './ui/open-document'
-import { createShell, type Shell } from './ui/shell'
+import { createShell, toggleFullscreen, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
 import { OPEN_DATA_PREFS_EVENT } from './ui/image-host'
 import { mountSidebar, ADD_TEAM_REQUEST_EVENT } from './ui/sidebar'
@@ -568,6 +568,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
       if (loc) store.update((d) => { toggleFavorite(d, loc) })
     },
     print: () => pm.printFocused(),
+    toggleFullscreen: () => toggleFullscreen(),
     closeFile: () => closeFile(),
   }
   disposers.push(() => sidebarHandle.dispose())
@@ -617,6 +618,9 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
         return
       case 'closeFile':
         if (navPastModelessCard()) closeFile()
+        return
+      case 'print':
+        if (!blockedByBlockingModal() && navPastModelessCard()) pm.printFocused()
         return
       case 'undoDelete':
         undoLatestOffer()

@@ -90,7 +90,8 @@ const globalRows = (lc: Locale): Rows => [
   ['Alt+←/→/↑/↓', 'help_global_pane_layout'],
   ['F1', 'help_global_help'],
   ['F2 … F8', 'help_global_pane_module'],
-  ['F11 / {fullscreen}', 'help_global_fullscreen'],
+  ['F11', 'help_global_fullscreen'],
+  ['Ctrl+P', 'help_global_print'],
   ['Ctrl+Enter', 'help_global_open_other_pane'],
   ['Ctrl+← / → / ↑ / ↓', 'help_global_move_item'],
   // Ctrl+Z is the app-wide undo of a delete or a move to another team (the

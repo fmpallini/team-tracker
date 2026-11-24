@@ -93,7 +93,7 @@ describe('iconButton', () => {
     const b = iconButton({ class: 'tt-x-btn', title: 'Remove', icon: 'trash', size: 16, onclick })
     expect(b.tagName).toBe('BUTTON')
     expect(b.type).toBe('button')
-    expect(b.className).toBe('tt-btn tt-x-btn')
+    expect(b.className).toBe('tt-btn tt-btn-icon tt-x-btn')
     expect(b.title).toBe('Remove')
     expect(b.getAttribute('aria-label')).toBe('Remove')
     expect(b.querySelectorAll('.tt-icon-trash')).toHaveLength(1)

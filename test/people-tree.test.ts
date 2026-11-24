@@ -863,25 +863,41 @@ describe('overdue 1:1 mark', () => {
     expect(mark(boxes(container)[0]!)!.getAttribute('aria-label')).toBe('1:1 overdue by 1 day')
   })
 
-  test('due-soon, due-today and never-met people get no mark', () => {
+  test('due today and due soon get the brass mark, like the module tab dot; later, never met or no cadence get none', () => {
     const team = makeTeam({
       members: [
         person({ id: 'a', name: 'Ana', order: 0, oneOnOneEveryDays: 14, lastOneOnOne: addDaysIso(todayIso(), -13) }),
         person({ id: 'b', name: 'Bia', order: 1, oneOnOneEveryDays: 14, lastOneOnOne: addDaysIso(todayIso(), -14) }),
-        person({ id: 'c', name: 'Caio', order: 2, oneOnOneEveryDays: 14 }),
-        person({ id: 'd', name: 'Duda', order: 3, lastOneOnOne: addDaysIso(todayIso(), -400), oneOnOneEveryDays: null }),
+        person({ id: 'e', name: 'Eva', order: 2, oneOnOneEveryDays: 14, lastOneOnOne: addDaysIso(todayIso(), -10) }),
+        person({ id: 'f', name: 'Fabi', order: 3, oneOnOneEveryDays: 30, lastOneOnOne: addDaysIso(todayIso(), -1) }),
+        person({ id: 'c', name: 'Caio', order: 4, oneOnOneEveryDays: 14 }),
+        person({ id: 'd', name: 'Duda', order: 5, lastOneOnOne: addDaysIso(todayIso(), -400), oneOnOneEveryDays: null }),
       ],
     })
     const { container, store, pm, loc } = setup(team, 'members')
-    store.update((d) => { d.prefs.oneOnOneDefaultDays = 0 })
+    store.update((d) => { d.prefs.oneOnOneDefaultDays = 0; d.prefs.dueSoonDays = 7 })
     render(container, loc, store, pm, 'members')
-    expect(container.querySelectorAll('.tt-org-due').length).toBe(0)
+    const [ana, bia, eva, fabi, caio, duda] = boxes(container)
+    expect(mark(ana!)!.classList.contains('soon')).toBe(true)
+    expect(mark(ana!)!.getAttribute('aria-label')).toBe('1:1 due in 1 day')
+    expect(mark(bia!)!.getAttribute('aria-label')).toBe('1:1 due today')
+    expect(mark(eva!)!.getAttribute('aria-label')).toBe('1:1 due in 4 days')
+    expect(mark(fabi!)).toBeNull() // 29 days out, past the 7-day window
+    expect(mark(caio!)).toBeNull()
+    expect(mark(duda!)).toBeNull()
+  })
+
+  test('an overdue mark is red, not the brass due-soon one', () => {
+    const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', oneOnOneEveryDays: 14, lastOneOnOne: addDaysIso(todayIso(), -17) })] })
+    const { container, store, pm, loc } = setup(team, 'members')
+    render(container, loc, store, pm, 'members')
+    expect(mark(boxes(container)[0]!)!.classList.contains('soon')).toBe(false)
   })
 
   test('prefs change (default cadence) repaints marks', () => {
     const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', lastOneOnOne: addDaysIso(todayIso(), -10) })] })
     const { container, store, pm, loc } = setup(team, 'members')
-    store.update((d) => { d.prefs.oneOnOneDefaultDays = 14 })
+    store.update((d) => { d.prefs.oneOnOneDefaultDays = 14; d.prefs.dueSoonDays = 0 })
     render(container, loc, store, pm, 'members')
     expect(container.querySelectorAll('.tt-org-due').length).toBe(0)
     store.update((d) => { d.prefs.oneOnOneDefaultDays = 7 }, { sections: ['prefs'] })
@@ -895,10 +911,11 @@ describe('overdue 1:1 mark', () => {
       const team = makeTeam({ members: [person({ id: 'a', name: 'Ana', oneOnOneEveryDays: 14, lastOneOnOne: '2026-05-27' })] })
       const { container, store, pm, loc } = setup(team, 'members')
       render(container, loc, store, pm, 'members')
-      expect(container.querySelectorAll('.tt-org-due').length).toBe(0) // due today
+      expect(mark(boxes(container)[0]!)!.getAttribute('aria-label')).toBe('1:1 due today')
       vi.setSystemTime(new Date(2026, 5, 11, 12))
       window.dispatchEvent(new Event('focus'))
       expect(mark(boxes(container)[0]!)!.getAttribute('aria-label')).toBe('1:1 overdue by 1 day')
+      expect(mark(boxes(container)[0]!)!.classList.contains('soon')).toBe(false)
     } finally {
       vi.useRealTimers()
     }

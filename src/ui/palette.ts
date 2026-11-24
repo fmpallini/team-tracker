@@ -183,7 +183,8 @@ export function createPalette(store: Store, pm: PaneManager, deps: PaletteDeps):
         onHover: () => { selected = i; paintSelection(listEl, '.tt-palette-item', selected) },
       }),
       icon(command.icon),
-      el('span', { class: 'tt-palette-label', title: command.label }, command.label)
+      el('span', { class: 'tt-palette-label', title: command.label }, command.label),
+      ...(command.hint ? [el('kbd', { class: 'tt-palette-hint' }, command.hint)] : [])
     )
   }
 

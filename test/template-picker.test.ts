@@ -90,11 +90,18 @@ describe('attachTemplatePicker', () => {
     sel.addRange(range)
   }
 
+  /** Toolbar More button, then its "Template..." row: the pointer path, mousedown included. */
   function clickTemplatesButton(): void {
-    const btn = Array.from(editor!.root.querySelectorAll('button')).find((b) => b.querySelector('.tt-icon-template') !== null)
-    if (!btn) throw new Error('templates toolbar button not found')
-    btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
-    btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    const click = (target: Element): void => {
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    }
+    const btn = Array.from(editor!.root.querySelectorAll('button')).find((b) => b.querySelector('.tt-icon-more') !== null)
+    if (!btn) throw new Error('More toolbar button not found')
+    click(btn)
+    const row = Array.from(document.querySelectorAll('.tt-atref-item')).find((r) => r.querySelector('.tt-more-menu-hint')?.textContent === '/')
+    if (!row) throw new Error('Template row not found in the More menu')
+    click(row)
   }
 
   test('typing "/" on an empty line opens the dropdown listing template names', () => {
@@ -259,7 +266,7 @@ describe('attachTemplatePicker', () => {
 
     // jsdom doesn't implement Range.getBoundingClientRect at all; stub it to
     // simulate the real-browser scenario this guards against — a Range
-    // positioned at an element-child-index boundary (e.g. the 📋 toolbar
+    // positioned at an element-child-index boundary (e.g. the More menu's Template
     // button's fallback range on a block with no live text selection)
     // returns a degenerate all-zero rect instead of the real caret position,
     // which without a fallback puts the popup at the viewport's (0,0).
@@ -296,7 +303,7 @@ describe('attachTemplatePicker', () => {
     expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
   })
 
-  test('the 📋 toolbar button opens the picker at the caret on an empty line', () => {
+  test('the More menu Template row opens the picker at the caret on an empty line', () => {
     const { editorEl } = setup()
     setBlockText(editorEl, '')
     clickTemplatesButton()
@@ -308,7 +315,7 @@ describe('attachTemplatePicker', () => {
     expect(editor!.getMd()).toBe('## Decision — Thu, 07/02/2026\n- a\n- b\n**bold** text')
   })
 
-  test('the 📋 toolbar button on a non-empty line inserts the template after that line, untouched', () => {
+  test('the More menu Template row on a non-empty line inserts the template after that line, untouched', () => {
     const { editorEl } = setup()
     setBlockText(editorEl, 'existing note')
     clickTemplatesButton()

@@ -15,7 +15,9 @@ import { unlinkRefsInTeam } from '../core/refs'
 import { findTeam as docFindTeam } from '../core/document'
 import { scopeAffects, type Section } from '../core/scope'
 import { withDisposal } from './lifecycle'
-import { oneOnOneOverdueDays } from '../core/cadence'
+import { oneOnOneDueDate } from '../core/cadence'
+import { dueState } from '../core/due'
+import { diffDays } from '../core/date'
 import { watchDayChange } from '../ui/day-change'
 import { deleteInTeamWithUndo } from '../core/undo-delete'
 import { offerUndoToast } from '../ui/undo-toast'
@@ -304,13 +306,22 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
       // A double-click on the button must not fall through to the box's open-notes handler.
       moreBtn.addEventListener('dblclick', (e) => e.stopPropagation())
 
-      // A dot in the top-right corner once the next 1:1 is late.
-      // Due today or soon draws nothing, and so does a person never met: there is no date to count from.
-      const days = oneOnOneOverdueDays(person, group, ctx.store.doc.prefs, todayIso())
+      // A dot in the top-right corner when the next 1:1 is due, by the due list's rule so the box answers the
+      // module tab's dot: red once late, brass within the due-soon window (today included). A person never met
+      // draws nothing: there is no date to count from.
+      const today = todayIso()
+      const dueDate = oneOnOneDueDate(person, group, ctx.store.doc.prefs)
+      const state = dueDate === null ? null : dueState(dueDate, today, ctx.store.doc.prefs.dueSoonDays)
       let dueMark: HTMLElement | null = null
-      if (days !== null) {
-        const text = t(lc, days === 1 ? 'org_one_on_one_overdue_one' : 'org_one_on_one_overdue', { days: String(days) })
-        dueMark = el('span', { class: 'tt-org-due', role: 'img', 'aria-label': text, title: text })
+      if (dueDate !== null && state !== null) {
+        const late = state === 'overdue'
+        const days = late ? diffDays(today, dueDate) : diffDays(dueDate, today)
+        const text = late
+          ? t(lc, days === 1 ? 'org_one_on_one_overdue_one' : 'org_one_on_one_overdue', { days: String(days) })
+          : days === 0
+            ? t(lc, 'org_one_on_one_due_today')
+            : t(lc, days === 1 ? 'org_one_on_one_due_in_one' : 'org_one_on_one_due_in', { days: String(days) })
+        dueMark = el('span', { class: late ? 'tt-org-due' : 'tt-org-due soon', role: 'img', 'aria-label': text, title: text })
       }
 
       const box = el(
