@@ -1,4 +1,4 @@
-import { resolveFileId, resolveFileLockKey, LOCK_REGISTRY_CAP } from '../src/core/file-identity'
+import { resolveFileId, fileLockKey, LOCK_REGISTRY_CAP } from '../src/core/file-identity'
 import type { FileSession } from '../src/core/fs'
 import { StallError, STALL_MS } from '../src/core/stall'
 
@@ -27,6 +27,10 @@ function handle(entry: string, name = 'team.tmv'): FileSystemFileHandle {
 
 function session(h: FileSystemFileHandle | null, name = 'team.tmv'): FileSession {
   return { handle: h, name, lastModified: 1 }
+}
+
+async function resolveFileLockKey(s: FileSession, locks?: LockManager): Promise<string> {
+  return fileLockKey(s, await resolveFileId(s, locks))
 }
 
 /** Name-keyed exclusive lock, enough to serialize the registry update. */
@@ -99,6 +103,11 @@ test('a registry lock never granted (another open stuck inside it) falls back to
     vi.useRealTimers()
     spy.mockRestore()
   }
+})
+
+test('fileLockKey keys by the resolved id, or by name when there is none', () => {
+  expect(fileLockKey(session(handle('x'), 'y.tmv'), 'abc')).toBe('tmv:abc')
+  expect(fileLockKey(session(handle('x'), 'y.tmv'), null)).toBe('tmv:y.tmv')
 })
 
 test('resolveFileId names the file the lock key is built from, and is null where there is no stable identity', async () => {

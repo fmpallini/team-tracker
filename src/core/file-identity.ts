@@ -77,11 +77,11 @@ export async function resolveFileId(session: FileSession, locks?: LockManager): 
 }
 
 /**
- * The lock / BroadcastChannel name for `session`'s file. Falls back to the
- * file name when there is no handle (fallback mode) or the registry can't be
- * read — no worse than before, and never a reason to fail opening a file.
+ * The lock / BroadcastChannel name for `session`'s file, from the id resolveFileId gave it. Falls back to the file name
+ * when there is none (fallback mode, an unreadable registry) — no worse than before, and never a reason to fail
+ * opening a file. Takes the id the open already resolved rather than asking the registry again: a second trip doubled
+ * the wait when browser storage stalls, and left the opened tab silently read-only for it (core/tab-lock.ts).
  */
-export async function resolveFileLockKey(session: FileSession, locks?: LockManager): Promise<string> {
-  const id = await resolveFileId(session, locks)
-  return id === null ? nameKey(session) : 'tmv:' + id
+export function fileLockKey(session: FileSession, fileId: string | null): string {
+  return fileId === null ? nameKey(session) : 'tmv:' + fileId
 }

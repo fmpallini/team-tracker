@@ -149,3 +149,13 @@ test('another file of the document is told apart by its file id, and the questio
   await r.handle!.persister.flush()
   expect((await db.getMeta(r.doc.docId))!.fileId).toBe('disk/b')
 })
+
+test('the file id is resolved once per open and handed to the app, with or without a browser database', async () => {
+  const fileA: FileSession = { handle: { entry: 'disk/a' } as unknown as FileSystemFileHandle, name: 'team.tmv', lastModified: 1 }
+  for (const liveDb of [db, null]) {
+    identity.resolveFileId.mockClear()
+    const r = (await reconcileOpen({ locale: 'en-US', db: liveDb, session: fileA, opened: fileOf(docWith('x')), password: null }))!
+    expect(r.fileId).toBe('disk/a')
+    expect(identity.resolveFileId).toHaveBeenCalledTimes(1)
+  }
+})

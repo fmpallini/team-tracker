@@ -40,6 +40,8 @@ export interface OpenedDocument {
   needsFileWrite: boolean
   /** The stamp of the file that was opened. */
   stamp: FileStamp | null
+  /** core/file-identity.ts's id for the file, resolved once here; main.ts keys the tab's write lock on it. */
+  fileId: string | null
 }
 
 /** Null: the user backed out of a question. Anything else unexpected propagates. */
@@ -51,17 +53,18 @@ export async function reconcileOpen(opts: {
   password: string | null
 }): Promise<OpenedDocument | null> {
   const { locale, db, session, opened, password } = opts
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
+  const fileId = await resolveFileId(session, locks)
   if (!db) {
     toast(t(locale, 'live_store_unavailable_toast'), { kind: 'error', sticky: true })
     const store = createStore(opened.doc, opened.images)
-    return { session, doc: opened.doc, password, images: opened.images, store, handle: null, needsFileWrite: false, stamp: opened.stamp }
+    return { session, doc: opened.doc, password, images: opened.images, store, handle: null, needsFileWrite: false, stamp: opened.stamp, fileId }
   }
   try {
-    const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
     const r = await resolveOpen({
       db, opened, password, fileName: session.name,
       // Which file this is, so an OS copy of the file the browser copy follows is told apart (core/live-open.ts).
-      fileId: await resolveFileId(session, locks),
+      fileId,
       askOlderFile: () => askOlderFile(locale),
       askBothChanged: () => askBothChanged(locale),
       askBrowserPassword: async () => {
@@ -73,7 +76,7 @@ export async function reconcileOpen(opts: {
       isOpenElsewhere: (docId) => isDocumentOpen(docId, locks),
       createStore,
     })
-    return { session, doc: r.doc, password: r.password, images: r.images, store: r.store, handle: r.handle, needsFileWrite: r.needsFileWrite, stamp: r.stamp }
+    return { session, doc: r.doc, password: r.password, images: r.images, store: r.store, handle: r.handle, needsFileWrite: r.needsFileWrite, stamp: r.stamp, fileId }
   } catch (e) {
     if (e instanceof OpenCancelled) return null
     throw e

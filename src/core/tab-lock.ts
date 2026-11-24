@@ -66,9 +66,9 @@ export interface TabLockDeps {
   refreshBeforeWritable?(): Promise<void>
   /**
    * The lock / BroadcastChannel name for this file (core/file-identity.ts's
-   * resolveFileLockKey — per file, not per file *name*). A promise because
-   * resolving it reads IndexedDB; the tab stays provisionally read-only until
-   * it settles and the lock is requested. Omitted = `'tmv:' + session.name`.
+   * fileLockKey — per file, not per file *name*). The tab stays
+   * provisionally read-only until it settles and the lock is requested.
+   * Omitted = `'tmv:' + session.name`.
    */
   lockKey?: Promise<string>
 }

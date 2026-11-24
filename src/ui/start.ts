@@ -117,9 +117,18 @@ export function showStartScreen(
    * (asking whatever that needs), then hand the result to main.ts. Backing out of a question leaves the start screen as it is.
    */
   async function finishOpen(session: FileSession, opened: OpenedDoc, password: string | null, superseded?: () => boolean): Promise<void> {
-    const db = await (opts?.liveDb ?? sharedLiveDb)()
-    const result = await reconcileOpen({ locale, db, session, opened, password })
-    if (result && !superseded?.()) onOpen(result)
+    // The file is read by now, but the browser's storage still has to answer: a large browser copy takes a moment, and
+    // a stalled one up to core/stall.ts's deadline. Say what the app is doing until it mounts or the user backs out.
+    // Two opens can overlap (auto-open and one the user started); only the latest one clears the line.
+    const token = ++openingToken
+    openingStatus.textContent = t(locale, 'start_opening', { name: session.name })
+    try {
+      const db = await (opts?.liveDb ?? sharedLiveDb)()
+      const result = await reconcileOpen({ locale, db, session, opened, password })
+      if (result && !superseded?.()) onOpen(result)
+    } finally {
+      if (openingToken === token) openingStatus.textContent = ''
+    }
   }
 
   async function decryptLoop(bytes: Uint8Array): Promise<{ opened: OpenedDoc; password: string } | null> {
@@ -167,6 +176,10 @@ export function showStartScreen(
   function corruptMessage(e: CorruptFileError): string {
     return e.path ? t(locale, 'err_invalid_shape', { path: e.path }) : t(locale, 'err_corrupt_file')
   }
+
+  // A live region, so it is announced, and in the DOM from the start (a region added along with its text often is not).
+  const openingStatus = el('p', { class: 'tt-start-opening', role: 'status' })
+  let openingToken = 0
 
   // Set the moment any explicit open starts (picker, reopen-last, OS launch,
   // fallback file, create). Auto-open-last checks it before acting: it runs
@@ -364,7 +377,7 @@ export function showStartScreen(
   autoLoadRow.style.display = 'none'
 
   const reopenRow = el('div', { class: 'tt-start-reopen-row' }, reopenBtn, autoLoadRow)
-  const buttonsCol = el('div', { class: 'tt-start-buttons' }, reopenRow, openBtn, createBtn)
+  const buttonsCol = el('div', { class: 'tt-start-buttons' }, reopenRow, openBtn, createBtn, openingStatus)
   reopenBtn.style.display = 'none'
   reopenRow.style.display = 'none'
 
