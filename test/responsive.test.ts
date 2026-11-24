@@ -64,7 +64,7 @@ test('no-ops gracefully when ResizeObserver is unavailable (e.g. jsdom without a
   const hooks = fakeHooks()
   const el = document.createElement('div')
 
-  const dispose = setupResponsiveLayout(el, hooks)
+  const dispose = setupResponsiveLayout(el, el, hooks)
   dispose() // must not throw
 
   expect(hooks.splitCalls).toEqual([])
@@ -77,25 +77,41 @@ describe('with ResizeObserver available', () => {
     ;(globalThis as { ResizeObserver: unknown }).ResizeObserver = FakeResizeObserver
   })
 
-  test('fires setSplitSpaceHidden(true) crossing below 900px, leaves narrower thresholds untouched above their own', () => {
+  test('split follows the panes area (second observer), not the window: hidden under two 30rem panes (900px at M)', () => {
     const hooks = fakeHooks()
-    setupResponsiveLayout(document.createElement('div'), hooks)
-    const ro = FakeResizeObserver.instances[0]!
-
-    ro.fire(1200) // wide: no threshold crossed relative to initial state (all false)
+    setupResponsiveLayout(document.createElement('div'), document.createElement('div'), hooks)
+    const [win, panes] = FakeResizeObserver.instances
+    win!.fire(800) // a narrow window alone never touches the split
     expect(hooks.splitCalls).toEqual([])
-    expect(hooks.sidebarCalls).toEqual([])
-    expect(hooks.headerCompactCalls).toEqual([])
 
-    ro.fire(850) // crosses split (900), not headerCompact (840) or sidebar (650)
+    panes!.fire(1000)
+    expect(hooks.splitCalls).toEqual([])
+    panes!.fire(890) // e.g. the sidebar opened: the panes lost its 220px
     expect(hooks.splitCalls).toEqual([true])
-    expect(hooks.headerCompactCalls).toEqual([])
-    expect(hooks.sidebarCalls).toEqual([])
+    panes!.fire(880) // edge-triggered: no repeat
+    expect(hooks.splitCalls).toEqual([true])
+    panes!.fire(910) // the sidebar collapsed again
+    expect(hooks.splitCalls).toEqual([true, false])
+  })
+
+  test('the split threshold follows the text size (XL: 60 × 18 = 1080), re-evaluated on a size change', async () => {
+    document.documentElement.dataset.size = 'M'
+    try {
+      const hooks = fakeHooks()
+      setupResponsiveLayout(document.createElement('div'), document.createElement('div'), hooks)
+      FakeResizeObserver.instances[1]!.fire(1000)
+      expect(hooks.splitCalls).toEqual([])
+      document.documentElement.dataset.size = 'XL'
+      await Promise.resolve() // MutationObserver callbacks are microtasks
+      expect(hooks.splitCalls).toEqual([true])
+    } finally {
+      delete document.documentElement.dataset.size
+    }
   })
 
   test('fires headerCompact alone crossing below 840px, above the sidebar threshold (650)', () => {
     const hooks = fakeHooks()
-    setupResponsiveLayout(document.createElement('div'), hooks)
+    setupResponsiveLayout(document.createElement('div'), document.createElement('div'), hooks)
     const ro = FakeResizeObserver.instances[0]!
 
     ro.fire(700) // below headerCompact (840), still above sidebar (650)
@@ -103,37 +119,34 @@ describe('with ResizeObserver available', () => {
     expect(hooks.sidebarCalls).toEqual([])
   })
 
-  test('fires all three hooks once each crossing below 650px, edge-triggered (repeat widths do not refire)', () => {
+  test('fires both window hooks once each crossing below 650px, edge-triggered (repeat widths do not refire)', () => {
     const hooks = fakeHooks()
-    setupResponsiveLayout(document.createElement('div'), hooks)
+    setupResponsiveLayout(document.createElement('div'), document.createElement('div'), hooks)
     const ro = FakeResizeObserver.instances[0]!
 
-    ro.fire(500) // below all three thresholds
-    expect(hooks.splitCalls).toEqual([true])
+    ro.fire(500) // below both thresholds
     expect(hooks.headerCompactCalls).toEqual([true])
     expect(hooks.sidebarCalls).toEqual([true])
 
-    ro.fire(400) // still below all — no repeat firing
-    expect(hooks.splitCalls).toEqual([true])
+    ro.fire(400) // still below both — no repeat firing
     expect(hooks.headerCompactCalls).toEqual([true])
     expect(hooks.sidebarCalls).toEqual([true])
   })
 
   test('widening back past every threshold fires each hook again with false', () => {
     const hooks = fakeHooks()
-    setupResponsiveLayout(document.createElement('div'), hooks)
+    setupResponsiveLayout(document.createElement('div'), document.createElement('div'), hooks)
     const ro = FakeResizeObserver.instances[0]!
 
-    ro.fire(500) // hides all three
-    ro.fire(1000) // widens past all three thresholds again
-    expect(hooks.splitCalls).toEqual([true, false])
+    ro.fire(500) // hides both
+    ro.fire(1000) // widens past both thresholds again
     expect(hooks.headerCompactCalls).toEqual([true, false])
     expect(hooks.sidebarCalls).toEqual([true, false])
   })
 
   test('fires setCalendarSpaceHidden(true) crossing below 560px, below the sidebar threshold (650)', () => {
     const hooks = fakeHooks()
-    setupResponsiveLayout(document.createElement('div'), hooks)
+    setupResponsiveLayout(document.createElement('div'), document.createElement('div'), hooks)
     const ro = FakeResizeObserver.instances[0]!
 
     ro.fire(600) // below sidebar (650) but still above the calendar threshold (560)
@@ -146,30 +159,29 @@ describe('with ResizeObserver available', () => {
     expect(hooks.calendarCalls).toEqual([true, false])
   })
 
-  test('dispose() disconnects the observer', () => {
-    const dispose = setupResponsiveLayout(document.createElement('div'), fakeHooks())
-    const ro = FakeResizeObserver.instances[0]!
-    expect(ro.disconnected).toBe(false)
+  test('dispose() disconnects both observers', () => {
+    const dispose = setupResponsiveLayout(document.createElement('div'), document.createElement('div'), fakeHooks())
+    expect(FakeResizeObserver.instances.map((ro) => ro.disconnected)).toEqual([false, false])
     dispose()
-    expect(ro.disconnected).toBe(true)
+    expect(FakeResizeObserver.instances.map((ro) => ro.disconnected)).toEqual([true, true])
   })
 
   describe('window-controls overlay (installed PWA) takes width out of the header row', () => {
     test('the header thresholds see the window width minus the reserved width; the others do not', () => {
       const hooks = fakeHooks()
-      setupResponsiveLayout(document.createElement('div'), hooks, { reservedWidth: () => 140 })
+      setupResponsiveLayout(document.createElement('div'), document.createElement('div'), hooks, { reservedWidth: () => 140 })
       const ro = FakeResizeObserver.instances[0]!
 
       ro.fire(950) // 950 − 140 = 810 < 840: compact, though a plain 950px window would not be
       expect(hooks.headerCompactCalls).toEqual([true])
-      expect(hooks.splitCalls).toEqual([]) // 950 is still above the 900 split threshold
+      expect(hooks.splitCalls).toEqual([]) // the split reads the panes area, which the overlay does not narrow
       expect(hooks.sidebarCalls).toEqual([])
     })
 
     test('reserved width is read on every evaluation, so a geometry change takes effect', () => {
       let reserved = 0
       const hooks = fakeHooks()
-      setupResponsiveLayout(document.createElement('div'), hooks, { reservedWidth: () => reserved })
+      setupResponsiveLayout(document.createElement('div'), document.createElement('div'), hooks, { reservedWidth: () => reserved })
       const ro = FakeResizeObserver.instances[0]!
       ro.fire(900)
       expect(hooks.headerCompactCalls).toEqual([])
@@ -199,7 +211,7 @@ describe('with ResizeObserver available', () => {
 
     test('is dropped once the header is too narrow for it to show more than a stub (220px + 54rem = 1030 at M), restored on widening', () => {
       const calls: boolean[] = []
-      setupResponsiveLayout(document.createElement('div'), { ...fakeHooks(), setHeaderTeamSpaceHidden: (h) => calls.push(h) })
+      setupResponsiveLayout(document.createElement('div'), document.createElement('div'), { ...fakeHooks(), setHeaderTeamSpaceHidden: (h) => calls.push(h) })
       const ro = FakeResizeObserver.instances[0]!
       ro.fire(1100)
       expect(calls).toEqual([])
@@ -212,7 +224,7 @@ describe('with ResizeObserver available', () => {
     test('the rem part of the threshold follows the text size (XL: 220 + 54 × 18 = 1192)', () => {
       document.documentElement.dataset.size = 'XL'
       const calls: boolean[] = []
-      setupResponsiveLayout(document.createElement('div'), { ...fakeHooks(), setHeaderTeamSpaceHidden: (h) => calls.push(h) })
+      setupResponsiveLayout(document.createElement('div'), document.createElement('div'), { ...fakeHooks(), setHeaderTeamSpaceHidden: (h) => calls.push(h) })
       const ro = FakeResizeObserver.instances[0]!
       ro.fire(1200)
       expect(calls).toEqual([])
@@ -229,7 +241,7 @@ describe('with ResizeObserver available', () => {
     test('at XL the header goes compact at a width where M still fits it (840 × 1.2 = 1008)', () => {
       document.documentElement.dataset.size = 'XL'
       const hooks = fakeHooks()
-      setupResponsiveLayout(document.createElement('div'), hooks)
+      setupResponsiveLayout(document.createElement('div'), document.createElement('div'), hooks)
       const ro = FakeResizeObserver.instances[0]!
 
       ro.fire(950) // between 840 and 1008
@@ -242,7 +254,7 @@ describe('with ResizeObserver available', () => {
         document.documentElement.dataset.size = size
         FakeResizeObserver.instances = []
         const hooks = fakeHooks()
-        setupResponsiveLayout(document.createElement('div'), hooks)
+        setupResponsiveLayout(document.createElement('div'), document.createElement('div'), hooks)
         const ro = FakeResizeObserver.instances[0]!
         ro.fire(850)
         expect(hooks.headerCompactCalls).toEqual([])
@@ -254,7 +266,7 @@ describe('with ResizeObserver available', () => {
     test('changing the size re-evaluates against the last width, without a resize', async () => {
       document.documentElement.dataset.size = 'M'
       const hooks = fakeHooks()
-      const dispose = setupResponsiveLayout(document.createElement('div'), hooks)
+      const dispose = setupResponsiveLayout(document.createElement('div'), document.createElement('div'), hooks)
       FakeResizeObserver.instances[0]!.fire(900)
       expect(hooks.headerCompactCalls).toEqual([])
 

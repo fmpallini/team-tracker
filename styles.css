@@ -294,8 +294,6 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header-center { justify-self: center; min-width: 0; max-width: max(0px, min(28vw, calc(100vw - var(--tt-wco-reserve) - 220px - 47rem))); overflow: hidden; padding-block: .35rem; margin-block: -.35rem; }
 /* Width the window-controls overlay takes from the header's row (0 outside the installed PWA): the formula above and responsive.ts both budget against the usable row, not the window. */
 :root { --tt-wco-reserve: 0px; }
-/* responsive.ts: the slot is too narrow for more than a stub. Hides the content, not .tt-header-center itself — a display:none grid item drops out of the auto-placement and the right cluster would slide into its column. Not in the compact header, which drops the left cluster and gives the slot the room that frees (see .tt-header-compact below). */
-.tt-header.tt-header-team-hidden:not(.tt-header-compact) .tt-header-team-indicator-group { display: none; }
 
 /* Window Controls Overlay (Chromium, installed PWA, Windows/ChromeOS): the OS
    draws its min/maximize/close caption buttons over the top-right corner of
@@ -410,32 +408,36 @@ body { background: var(--bg); color: var(--fg); }
 /* Same ✓ gutter as .tt-pane-menu-check / .tt-context-menu-check (history menu). */
 .tt-team-switcher-check { display: inline-block; width: 1.1em; color: var(--accent); font-weight: 700; flex: none; }
 
-/* Space-constrained override (src/ui/responsive.ts, below
-   HEADER_COMPACT_BELOW_PX, which grows with the text size): hides every
-   optional header element at once. What is left is the save-state pill (so
-   unsaved work stays visible), the close-file (🔒) and settings (⚙) buttons —
-   closing the file and reaching prefs must always be reachable — and the team
-   group (team pill + other-teams due clock), which shows exactly when the
-   sidebar is hidden: with the sidebar auto-hidden at these widths it is the
-   only way to see the due counts and change team without a hotkey.
-   Everything else has a keyboard equivalent (Ctrl+Shift+K/Ctrl+F for the app
-   name/search) or simply isn't essential moment-to-moment. */
-.tt-header.tt-header-compact .tt-header-left,
+/* Compact header (shell.ts renderCompact: below HEADER_COMPACT_BELOW_PX, which
+   grows with the text size, or with the sidebar collapsed once the team slot
+   is too narrow). Drops the app name, help and promo button; what is left is
+   all square controls or shrinkable pills: the sidebar toggle and the search
+   icon (each auto-hide keeps its way back, and Ctrl+F needs a box to focus),
+   the team group (team pill + other-teams due clock), which shows exactly when
+   the sidebar is hidden — then the only place to see the due counts and change
+   team without a hotkey — and the save pill, settings (⚙) and close-file (🔒). */
+.tt-header.tt-header-compact .tt-app-name,
 .tt-header.tt-header-compact .tt-btn-promo,
 .tt-header.tt-header-compact .tt-btn-help {
   display: none;
 }
-/* Two columns with the left cluster gone (every child of it is hidden above):
-   the team group takes the old app-name spot and the right cluster sits at the
-   end. Both are placed explicitly, so dropping .tt-header-left out of the grid
-   cannot shift them. The right cluster's track is minmax(0, auto): it is sized
-   before the 1fr one, so the mandatory pill and buttons win and the team
-   name ellipsizes; only past that does the pill — the only part of the
-   cluster that can — give way with an ellipsis rather than push the two
-   buttons off the edge. */
-.tt-header.tt-header-compact { grid-template-columns: minmax(0, 1fr) minmax(0, auto); }
-.tt-header.tt-header-compact .tt-header-center { grid-column: 1; justify-self: start; max-width: 100%; }
-.tt-header.tt-header-compact .tt-header-right { grid-column: 2; min-width: 0; gap: .5rem; justify-content: flex-end; }
+/* Three columns, each cluster placed explicitly so a hidden one cannot shift
+   the others: the two left squares hug their content, the team group takes the
+   rest, the right cluster sits at the end. The right cluster's track is
+   minmax(0, auto): it is sized before the 1fr one, so the mandatory pill and
+   buttons win and the team name ellipsizes; only past that does the pill — the
+   only part of the cluster that can — give way with an ellipsis rather than
+   push the two buttons off the edge. The left cluster is a plain row here: its
+   grid columns are sized for the app name, which is gone. */
+.tt-header.tt-header-compact { grid-template-columns: auto minmax(0, 1fr) minmax(0, auto); }
+.tt-header.tt-header-compact .tt-header-left { grid-column: 1; display: flex; align-items: center; gap: .375rem; }
+.tt-header.tt-header-compact .tt-header-center { grid-column: 2; justify-self: start; max-width: 100%; }
+.tt-header.tt-header-compact .tt-header-right { grid-column: 3; min-width: 0; gap: .5rem; justify-content: flex-end; }
+/* Search in use (focused, or holding a query): the field takes the team group's
+   column, as it takes free space in the full header; the group returns when the
+   field folds back to its icon. */
+.tt-header.tt-header-compact:has(.tt-search-wrap:is(:focus-within, .has-value)) .tt-header-left { grid-column: 1 / 3; }
+.tt-header.tt-header-compact:has(.tt-search-wrap:is(:focus-within, .has-value)) .tt-header-center { display: none; }
 .tt-header.tt-header-compact .tt-save-pill-wrap,
 .tt-header.tt-header-compact .tt-save-pill { min-width: 0; }
 .tt-header.tt-header-compact .tt-save-pill-wrap { flex: 0 1 auto; }

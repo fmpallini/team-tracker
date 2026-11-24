@@ -307,7 +307,8 @@ test.describe('split view — an edit in one pane leaves the other pane mounted'
 })
 
 // The window-width path jsdom can't reach (no ResizeObserver there): the real
-// responsive layout hides pane 2 below 900px while nav.split stays on. The pane
+// responsive layout hides pane 2 once the panes area is under two 30rem panes
+// (900px at M) while nav.split stays on. The pane
 // the user is working in must stay in view, focus must never sit on the hidden
 // pane, and widening must put things back.
 test.describe('split view — resizing the window narrow and wide again', () => {
@@ -334,6 +335,18 @@ test.describe('split view — resizing the window narrow and wide again', () => 
     await expect(page.locator('.tt-pane[data-pane-idx="0"] .tt-milestone-row').first()).toBeVisible()
     await expect(page.locator('.tt-pane[data-pane-idx="1"] .tt-kanban-board')).toBeVisible()
     await expect(page.locator('.tt-pane[data-pane-idx="1"]')).toHaveClass(/focused/)
+  })
+
+  // The threshold is the room the panes share, not the window: at 1000px the open
+  // sidebar leaves two ~390px panes, too narrow; collapsing it gives them the room.
+  test('collapsing the sidebar brings the split back where its 220px was what squeezed it out', async ({ page }) => {
+    await openFocusedOnRight(page)
+    await page.setViewportSize({ width: 1000, height: 800 })
+    await expect(page.locator('.tt-pane[data-pane-idx="1"]')).toBeHidden()
+    await page.locator('.tt-sidebar-toggle').click()
+    await expect(page.locator('.tt-pane[data-pane-idx="1"]')).toBeVisible()
+    await page.locator('.tt-sidebar-toggle').click()
+    await expect(page.locator('.tt-pane[data-pane-idx="1"]')).toBeHidden()
   })
 
   test('while narrow, Alt+Right does not move focus to the hidden pane', async ({ page }) => {

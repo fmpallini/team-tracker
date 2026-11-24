@@ -82,19 +82,18 @@ export interface Shell {
   subscribeSaveState(cb: (info: SaveStatusInfo) => void): () => void
   /**
    * Driven by the responsive-layout ResizeObserver (src/ui/responsive.ts):
-   * below a width threshold, force-hides every non-mandatory header element
-   * at once — sidebar collapse toggle, app name, search bar, the active-team
-   * indicator (whatever sidebar.ts put in headerCenter), the save-state pill,
-   * fullscreen, and help — leaving only the close-file (🔒) and settings (⚙)
-   * buttons. A single threshold covering the whole optional set, rather than
-   * one per element: hiding them one at a time just relocates the point
-   * where the two fixed/floored clusters either side of them collide
-   * instead of removing it, since close-file+settings is the only content
-   * that actually needs guaranteed room.
+   * below a width threshold the header goes compact (styles.css
+   * .tt-header-compact) — the app name, help and promo button go, search
+   * folds to its icon, the healthy save pill to its icon. A single threshold
+   * covering the whole optional set, rather than one per element: hiding them
+   * one at a time just relocates the point where the two fixed/floored
+   * clusters either side of them collide instead of removing it.
    */
   setHeaderCompactSpaceHidden(hidden: boolean): void
-  /** Drops the centred team indicator once its slot is too narrow to show more than a stub (see responsive.ts). */
+  /** The centred team slot is too narrow to show more than a stub (see responsive.ts). With the sidebar collapsed this turns the header compact too, so the team pill is never the thing that goes. */
   setHeaderTeamSpaceHidden(hidden: boolean): void
+  /** Whether the sidebar is hidden (by the user or by the window width). Set by sidebar.ts; marks the sidebar element and feeds the compact-header decision above. */
+  setSidebarCollapsed(collapsed: boolean): void
   /**
    * Releases the OS-theme `matchMedia` listener this shell registered.
    *
@@ -404,12 +403,29 @@ export function createShell(locale: Locale): Shell {
     return () => { saveStateSubscribers.delete(cb) }
   }
 
-  function setHeaderCompactSpaceHidden(hidden: boolean): void {
-    header.classList.toggle('tt-header-compact', hidden)
+  // Compact is the narrow-window header, or — with the sidebar collapsed, so the
+  // team pill is the header's to show — any width where the full header leaves
+  // that pill too little room. The team pill and due clock are what a hidden
+  // sidebar must never take away; search, the app name and help all have keyboard
+  // equivalents, so they are the ones that give way.
+  let compactSpace = false
+  let teamSpace = false
+  let sidebarCollapsed = false
+  function renderCompact(): void {
+    header.classList.toggle('tt-header-compact', compactSpace || (teamSpace && sidebarCollapsed))
   }
-
+  function setHeaderCompactSpaceHidden(hidden: boolean): void {
+    compactSpace = hidden
+    renderCompact()
+  }
   function setHeaderTeamSpaceHidden(hidden: boolean): void {
-    header.classList.toggle('tt-header-team-hidden', hidden)
+    teamSpace = hidden
+    renderCompact()
+  }
+  function setSidebarCollapsed(collapsed: boolean): void {
+    sidebar.dataset.collapsed = String(collapsed)
+    sidebarCollapsed = collapsed
+    renderCompact()
   }
 
   renderSaveIndicator()
@@ -421,5 +437,5 @@ export function createShell(locale: Locale): Shell {
     ageTimer = null
   }
 
-  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setFileHealth, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onPillAction, requestPillAction, subscribeSaveState, setHeaderCompactSpaceHidden, setHeaderTeamSpaceHidden, dispose }
+  return { root, headerLeft, headerCenter, headerRight, sidebar, panesRoot, setFileHealth, applyPrefs, setTitle, onSettings, onHelp, onAppNameClick, setAppNameEnabled, onCloseFile, onPillAction, requestPillAction, subscribeSaveState, setHeaderCompactSpaceHidden, setHeaderTeamSpaceHidden, setSidebarCollapsed, dispose }
 }

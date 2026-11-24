@@ -196,7 +196,7 @@ export function mountSidebar(shell: Shell, store: Store, pm: PaneManager, action
 
   function renderCollapseState(): void {
     const collapsed = effectivelyCollapsed()
-    shell.sidebar.dataset.collapsed = String(collapsed)
+    shell.setSidebarCollapsed(collapsed)
     // The glyph differs only between the two states; rebuilding its SVG on
     // every nav mutation would repaint an identical icon.
     if (paintedCollapsed !== collapsed) {

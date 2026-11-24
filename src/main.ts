@@ -577,7 +577,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   }
   disposers.push(() => sidebarHandle.dispose())
   disposers.push(
-    setupResponsiveLayout(shell.root, {
+    setupResponsiveLayout(shell.root, shell.panesRoot, {
       setSplitSpaceHidden: (hidden) => pm.setSplitSpaceConstrained(hidden),
       setSidebarSpaceHidden: (hidden) => sidebarHandle.setSpaceConstrained(hidden),
       setHeaderCompactSpaceHidden: (hidden) => shell.setHeaderCompactSpaceHidden(hidden),

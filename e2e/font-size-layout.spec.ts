@@ -143,7 +143,7 @@ for (const size of ['M', 'XL'] as const) {
 for (const [size, width] of [['M', 700], ['XL', 900], ['XL', 400]] as const) {
   // Plus the team pill once the window is under the sidebar's own threshold (650px) and the team list is gone.
   const teamPill = width < 650
-  test(`compact header (${size}, ${width}px) keeps exactly the save pill, lock and settings${teamPill ? ' and the team pill' : ''}`, async ({ page }) => {
+  test(`compact header (${size}, ${width}px) keeps exactly the sidebar toggle, search icon, save pill, lock and settings${teamPill ? ' and the team pill' : ''}`, async ({ page }) => {
     await openDoc(page, buildDoc(size, { kind: 'general' }, { locale: 'pt-BR' }), { width, height: 700 })
     await page.keyboard.press('F3')
     await page.keyboard.press('F2')
@@ -152,7 +152,7 @@ for (const [size, width] of [['M', 700], ['XL', 900], ['XL', 400]] as const) {
       ['.tt-save-pill', '.tt-btn-close-file', '.tt-btn-settings', '.tt-btn-promo', '.tt-btn-help', '.tt-search-input', '.tt-app-name', '.tt-sidebar-toggle', '.tt-header-team-indicator']
         .filter((q) => { const e = document.querySelector(q); return e !== null && e.getBoundingClientRect().width > 0 })
     )
-    expect(visible.sort()).toEqual(['.tt-btn-close-file', '.tt-btn-settings', ...(teamPill ? ['.tt-header-team-indicator'] : []), '.tt-save-pill'])
+    expect(visible.sort()).toEqual(['.tt-btn-close-file', '.tt-btn-settings', ...(teamPill ? ['.tt-header-team-indicator'] : []), '.tt-save-pill', '.tt-search-input', '.tt-sidebar-toggle'])
     // all three on screen, the pill's text ellipsized rather than shoving a button off the edge
     const right = await page.evaluate(() => document.querySelector('.tt-btn-settings')!.getBoundingClientRect().right)
     expect(right).toBeLessThanOrEqual(width)
@@ -189,6 +189,54 @@ for (const size of ['M', 'XL'] as const) {
     await expect(page.locator('.tt-header-team-indicator-label')).toContainText('Other team')
   })
 }
+
+// Search had no way in at all once the header went compact: the box was hidden, so
+// Ctrl+F focused nothing (and, prevented, did not open the browser's find either).
+test('compact header: Ctrl+F opens the search over the team slot, which comes back once the field folds', async ({ page }) => {
+  await openDoc(page, buildDoc('M', { kind: 'general' }), { width: 480, height: 700 })
+  await expect(page.locator('.tt-header.tt-header-compact')).toBeVisible()
+  await expect(page.locator('.tt-header-team-indicator')).toBeVisible()
+  await page.keyboard.press('Control+f')
+  const input = page.locator('.tt-search-input')
+  await expect(input).toBeFocused()
+  await expect(page.locator('.tt-header-team-indicator')).toBeHidden()
+  await expect.poll(() => input.evaluate((e) => e.getBoundingClientRect().width)).toBeGreaterThanOrEqual(200)
+  expect(await headerClashes(page)).toEqual([])
+  await page.keyboard.press('Escape')
+  await page.locator('.tt-pane-body').first().click()
+  await expect(page.locator('.tt-header-team-indicator')).toBeVisible()
+})
+
+// The team pill used to vanish with the sidebar collapsed between the compact width
+// and the one where the full header leaves its slot ~7rem: the one band with no due
+// count anywhere in the header. Collapsing the sidebar there now turns the header
+// compact instead, and expanding it again restores the full header.
+for (const [size, width] of [['M', 950], ['XL', 1100]] as const) {
+  test(`collapsing the sidebar at ${width}px (${size}) keeps the team pill by going compact`, async ({ page }) => {
+    await openDoc(page, buildDoc(size, { kind: 'general' }), { width, height: 700 })
+    await expect(page.locator('.tt-header.tt-header-compact')).toHaveCount(0)
+    await page.locator('.tt-sidebar-toggle').click()
+    await expect(page.locator('.tt-header.tt-header-compact')).toBeVisible()
+    await expect(page.locator('.tt-header-team-indicator')).toBeVisible()
+    expect(await headerClashes(page)).toEqual([])
+    await page.locator('.tt-sidebar-toggle').click()
+    await expect(page.locator('.tt-header.tt-header-compact')).toHaveCount(0)
+    await expect(page.locator('.tt-app-name')).toBeVisible()
+  })
+}
+
+// Every auto-hide keeps its own way back, as the split button always had: the
+// sidebar's toggle stays in the compact header, the calendar's in its folded column.
+test('narrow window: the sidebar toggle and the calendar toggle each bring back what the width folded', async ({ page }) => {
+  await openDoc(page, buildDoc('M', { kind: 'daily', date: new Date().toLocaleDateString('en-CA') }), { width: 540, height: 700 })
+  await expect(page.locator('.tt-team-list')).toBeHidden()
+  const calSlot = page.locator('.tt-daily-calendar-slot').first()
+  await expect(calSlot).toBeHidden()
+  await page.locator('.tt-daily-calendar-toggle').first().click()
+  await expect(calSlot).toBeVisible()
+  await page.locator('.tt-sidebar-toggle').click()
+  await expect(page.locator('.tt-team-list')).toBeVisible()
+})
 
 // Installed PWA with window-controls overlay: the OS draws min/max/close over the
 // header's right end, and styles.css pads the header by that width — so the row the

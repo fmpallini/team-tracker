@@ -72,15 +72,20 @@ describe('header compact mode', () => {
     expect(header(shell).classList.contains('tt-header-compact')).toBe(false)
   })
 
-  test('setHeaderTeamSpaceHidden toggles its own class, independent of compact', () => {
+  test('a too-narrow team slot turns the header compact only while the sidebar is collapsed', () => {
     const shell = setup()
-    shell.setHeaderCompactSpaceHidden(true)
+    const compact = (): boolean => header(shell).classList.contains('tt-header-compact')
     shell.setHeaderTeamSpaceHidden(true)
-    expect(header(shell).classList.contains('tt-header-team-hidden')).toBe(true)
-    shell.setHeaderCompactSpaceHidden(false)
-    expect(header(shell).classList.contains('tt-header-team-hidden')).toBe(true)
+    expect(compact()).toBe(false) // sidebar open: the slot shows nothing anyway, the full header stays
+    shell.setSidebarCollapsed(true)
+    expect(compact()).toBe(true) // the team pill is the header's to show now, so the optional pieces go instead
+    expect(shell.sidebar.dataset.collapsed).toBe('true')
     shell.setHeaderTeamSpaceHidden(false)
-    expect(header(shell).classList.contains('tt-header-team-hidden')).toBe(false)
+    expect(compact()).toBe(false)
+    shell.setHeaderCompactSpaceHidden(true)
+    shell.setSidebarCollapsed(false)
+    expect(compact()).toBe(true) // the narrow-window reason holds on its own
+    expect(shell.sidebar.dataset.collapsed).toBe('false')
   })
 })
 
