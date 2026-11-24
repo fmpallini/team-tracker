@@ -116,6 +116,7 @@ test('a file changed elsewhere while the browser holds unwritten edits asks; can
   expect(dialogs.askBothChanged).toHaveBeenCalledWith('en-US')
   expect(result).toBeNull()
   expect(document.querySelector('.tt-start-screen')).not.toBeNull()
+  expect(document.querySelector('.tt-start-opening')!.textContent).toBe('')
 })
 
 test('creating a file writes a stamped file and registers the document in the browser store', async () => {
@@ -150,4 +151,20 @@ test('without browser storage the file still opens, from the file alone', async 
   const o = (await opened)!
   expect(o.handle).toBeNull()
   expect(o.doc.teams[0]!.dailyNotes['2026-07-01']).toBe('x')
+})
+
+test('while the browser storage is answering, the start screen says which file is opening', async () => {
+  fsMocks.pickOpen.mockResolvedValue({ session, bytes: await serializePlain(docWith('base')) })
+  let answer!: (d: LiveDb) => void
+  const onOpen = vi.fn()
+  showStartScreen('en-US', onOpen, { liveDb: () => new Promise<LiveDb>((r) => { answer = r }) })
+  const status = document.querySelector('.tt-start-opening')!
+  expect(status.getAttribute('role')).toBe('status')
+  expect(status.textContent).toBe('')
+  Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Open file…')!.click()
+  await flush()
+  expect(status.textContent).toBe('Opening team.tmv…')
+  answer(db)
+  await vi.waitFor(() => expect(onOpen).toHaveBeenCalled())
+  expect(status.textContent).toBe('')
 })

@@ -47,7 +47,7 @@ import { watchFileHealth, watchStoreHealth } from './ui/file-health-toasts'
 import { createChangePassword } from './core/change-password'
 import { contentFingerprint } from './core/snapshot'
 import { createTabLock } from './core/tab-lock'
-import { resolveFileLockKey } from './core/file-identity'
+import { fileLockKey } from './core/file-identity'
 import { createConflictFlow } from './core/conflict-flow'
 import { reopenFork } from './core/fork-reopen'
 import { closeAnyContextMenu } from './ui/context-menu'
@@ -411,7 +411,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
       if (persister.lastError) throw persister.lastError instanceof Error ? persister.lastError : new Error('the browser could not store the latest changes')
     },
     // Per file, not per file name — see core/file-identity.ts.
-    lockKey: resolveFileLockKey(session, navigator.locks),
+    lockKey: Promise.resolve(fileLockKey(session, opened.fileId)),
     onReadOnlyChange: (readOnly) => {
       setEditorsReadOnly(readOnly)
       setReadOnlyLock(readOnly, () => store.doc.prefs.locale)
