@@ -4,6 +4,12 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.9.2] - 2026-11-23
+
+### Fixed
+- Picking another file while one is still opening now opens the file you picked last; before, the earlier one could finish later and replace it.
+- The "Opening …" line on the start screen is larger and easier to read.
+
 ## [3.9.1] - 2026-11-23
 
 ### Fixed

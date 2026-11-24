@@ -8,8 +8,9 @@ The slower checks run in CI instead:
 
 - **E2E** (`npm run test:e2e`, Playwright/Chromium) — `.github/workflows/ci.yml`'s
   `e2e` jobs, on every push to `dev` and every PR into `main`. Run as three parallel
-  parts (the serial `leak.spec.ts` on its own runner, the rest in two shards); a release PR whose head commit already passed E2E on the `dev` push (and
-  that `main` adds nothing to) skips the repeat.
+  parts (the serial `leak.spec.ts` on its own runner, the rest in two shards). A
+  release PR whose head commit `main` adds nothing to waits for the `dev` push's
+  run on that commit and, if its E2E passed, skips the repeat.
 - **`npm audit` / `npm outdated`** — `.github/workflows/deps-audit.yml`, weekly
   cron (plus `workflow_dispatch`). Fails on high/critical, same threshold the
   pre-push gate used.

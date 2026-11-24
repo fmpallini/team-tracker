@@ -1,15 +1,21 @@
 name: CodeQL
 
+# No push trigger for main: it only ever moves by merging a dev -> main PR
+# whose head (a fast-forward, see sync-dev.yml) CodeQL already analyzed twice,
+# on the dev push and on the PR, so a third pass on the merge commit found
+# nothing new and was the one extra run beside Release on every release. The
+# weekly cron runs on the default branch (main), which keeps main's alerts in
+# the Security tab and the baseline PR analyses compare against current.
 on:
   push:
-    branches: [main, dev]
+    branches: [dev]
   pull_request:
     branches: [main, dev]
   schedule:
     - cron: '17 3 * * 1'
 
 # Supersede an in-flight analysis of a PR when a new commit lands on it; let
-# pushes to dev/main and the weekly cron each keep their own result.
+# pushes to dev and the weekly cron each keep their own result.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

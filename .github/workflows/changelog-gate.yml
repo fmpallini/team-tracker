@@ -1,0 +1,68 @@
+name: Changelog
+
+# A dev -> main PR that bumps package.json's version MUST carry a matching,
+# non-empty "## [x.y.z]" section in CHANGELOG.md. Without it, release.yml
+# silently falls back to auto-generated PR-title notes (`--generate-notes`),
+# so a forgotten entry degrades the release instead of blocking it — this gate
+# is what turns that into a hard failure at PR time, while the version bump is
+# still easy to pair with its changelog entry.
+#
+# Its own workflow, triggered only by PRs into main, rather than a job in
+# ci.yml: there it also showed up on every dev push as a *skipped* check of the
+# same name on the same commit, and a required check counts "skipped" as
+# passing, so the push run's skip could stand in for a red verdict on the PR.
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  changelog-gate:
+    name: Changelog entry for version bump
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      # Default shallow checkout, not fetch-depth: 0 — this job reads exactly
+      # one file from the base branch, and a full clone of this repo is ~135MB
+      # of history to fetch for it. The one commit it needs is pulled below.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Require CHANGELOG.md entry when package.json version changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver() { grep -m1 '"version"' "$1" | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'; }
+          HEAD_VER=$(ver package.json)
+          # The shallow PR checkout has no origin/<base> tracking ref, so fetch
+          # just that branch's tip (depth 1, unauthenticated — public repo).
+          git fetch --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+          git show "origin/${GITHUB_BASE_REF}:package.json" > /tmp/base-package.json
+          BASE_VER=$(ver /tmp/base-package.json)
+          echo "package.json version: base=${BASE_VER} head=${HEAD_VER}"
+          if [ "$HEAD_VER" = "$BASE_VER" ]; then
+            echo "No version change — CHANGELOG.md entry not required."
+            exit 0
+          fi
+          if ! grep -qF "## [${HEAD_VER}]" CHANGELOG.md; then
+            echo "::error file=CHANGELOG.md::package.json version bumped ${BASE_VER} -> ${HEAD_VER} but CHANGELOG.md has no '## [${HEAD_VER}]' section. Add one covering every user-facing change since the last release tag."
+            exit 1
+          fi
+          BODY=$(awk -v t="## [${HEAD_VER}]" '
+            index($0, t) == 1 { f = 1; next }
+            f && index($0, "## [") == 1 { exit }
+            f && NF { print }
+          ' CHANGELOG.md)
+          if [ -z "$BODY" ]; then
+            echo "::error file=CHANGELOG.md::CHANGELOG.md '## [${HEAD_VER}]' section is empty — release.yml would fall back to auto-generated notes."
+            exit 1
+          fi
+          echo "CHANGELOG.md '## [${HEAD_VER}]' section present and non-empty."

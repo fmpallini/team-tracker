@@ -100,7 +100,11 @@ let app: AppController | null = null
 // rejection unhandled.
 function openDocument(opened: OpenedDocument): void {
   const { doc } = opened
-  onDocumentOpened(opened).catch((e: unknown) => {
+  onDocumentOpened(opened).then((mounted) => {
+    // Turned down (that file is already open, or the open one stayed): like core/fork-reopen.ts, stop the persister
+    // reconcileOpen built for it, which otherwise keeps watching a store nothing will show.
+    if (!mounted) opened.handle?.persister.dispose()
+  }, (e: unknown) => {
     console.error(e)
     // Previously silent (console.error only) — a throw here left the user
     // staring at whatever partially rendered before it, with no feedback at
