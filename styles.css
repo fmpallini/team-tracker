@@ -294,8 +294,8 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header-center { justify-self: center; min-width: 0; max-width: max(0px, min(28vw, calc(100vw - var(--tt-wco-reserve) - 220px - 47rem))); overflow: hidden; padding-block: .35rem; margin-block: -.35rem; }
 /* Width the window-controls overlay takes from the header's row (0 outside the installed PWA): the formula above and responsive.ts both budget against the usable row, not the window. */
 :root { --tt-wco-reserve: 0px; }
-/* responsive.ts: the slot is too narrow for more than a stub. Hides the content, not .tt-header-center itself — a display:none grid item drops out of the auto-placement and the right cluster would slide into its column. */
-.tt-header.tt-header-team-hidden .tt-header-team-indicator-group { display: none; }
+/* responsive.ts: the slot is too narrow for more than a stub. Hides the content, not .tt-header-center itself — a display:none grid item drops out of the auto-placement and the right cluster would slide into its column. Not in the compact header, which drops the left cluster and gives the slot the room that frees (see .tt-header-compact below). */
+.tt-header.tt-header-team-hidden:not(.tt-header-compact) .tt-header-team-indicator-group { display: none; }
 
 /* Window Controls Overlay (Chromium, installed PWA, Windows/ChromeOS): the OS
    draws its min/maximize/close caption buttons over the top-right corner of
@@ -412,29 +412,43 @@ body { background: var(--bg); color: var(--fg); }
 
 /* Space-constrained override (src/ui/responsive.ts, below
    HEADER_COMPACT_BELOW_PX, which grows with the text size): hides every
-   optional header element at once — wins over .tt-header-team-indicator.visible
-   above regardless of sidebar collapse state. What is left is the save-state
-   pill (so unsaved work stays visible), the close-file (🔒) and settings (⚙)
-   buttons: closing the file and reaching prefs must always be reachable;
-   everything else has a keyboard equivalent (Ctrl+Shift+K/Ctrl+F for the app
+   optional header element at once. What is left is the save-state pill (so
+   unsaved work stays visible), the close-file (🔒) and settings (⚙) buttons —
+   closing the file and reaching prefs must always be reachable — and the team
+   group (team pill + other-teams due clock), which shows exactly when the
+   sidebar is hidden: with the sidebar auto-hidden at these widths it is the
+   only way to see the due counts and change team without a hotkey.
+   Everything else has a keyboard equivalent (Ctrl+Shift+K/Ctrl+F for the app
    name/search) or simply isn't essential moment-to-moment. */
-.tt-header.tt-header-compact .tt-sidebar-toggle,
-.tt-header.tt-header-compact .tt-app-name,
-.tt-header.tt-header-compact .tt-search-wrap,
-.tt-header.tt-header-compact .tt-header-team-indicator-group,
+.tt-header.tt-header-compact .tt-header-left,
 .tt-header.tt-header-compact .tt-btn-promo,
 .tt-header.tt-header-compact .tt-btn-help {
   display: none;
 }
-/* With the left and centre slots empty, give the right cluster the whole bar
-   (its 1fr share was half of it) and let the pill — the only part that can —
-   give way with an ellipsis rather than push the two buttons off the edge. */
-.tt-header.tt-header-compact { grid-template-columns: 0 0 minmax(0, 1fr); column-gap: 0; }
-.tt-header.tt-header-compact .tt-header-right { min-width: 0; gap: .5rem; justify-self: stretch; justify-content: flex-end; }
+/* Two columns with the left cluster gone (every child of it is hidden above):
+   the team group takes the old app-name spot and the right cluster sits at the
+   end. Both are placed explicitly, so dropping .tt-header-left out of the grid
+   cannot shift them. The right cluster's track is minmax(0, auto): it is sized
+   before the 1fr one, so the mandatory pill and buttons win and the team
+   name ellipsizes; only past that does the pill — the only part of the
+   cluster that can — give way with an ellipsis rather than push the two
+   buttons off the edge. */
+.tt-header.tt-header-compact { grid-template-columns: minmax(0, 1fr) minmax(0, auto); }
+.tt-header.tt-header-compact .tt-header-center { grid-column: 1; justify-self: start; max-width: 100%; }
+.tt-header.tt-header-compact .tt-header-right { grid-column: 2; min-width: 0; gap: .5rem; justify-content: flex-end; }
 .tt-header.tt-header-compact .tt-save-pill-wrap,
 .tt-header.tt-header-compact .tt-save-pill { min-width: 0; }
 .tt-header.tt-header-compact .tt-save-pill-wrap { flex: 0 1 auto; }
 .tt-header.tt-header-compact .tt-save-pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* While nothing needs the user (Saved / Writing…) the pill is just its icon: the
+   state still reads from the tint and the spin, the hover title keeps the detail,
+   and the label stays in the accessibility tree (visually hidden, as
+   .tt-visually-hidden). States that ask for action — grant access, file not
+   written, export, read-only, no browser storage — keep their words. */
+.tt-header.tt-header-compact .tt-save-pill:is([data-state="ok"], [data-state="writing"]) { width: var(--tt-header-ctl-h); padding: 0; justify-content: center; }
+.tt-header.tt-header-compact .tt-save-pill:is([data-state="ok"], [data-state="writing"]) .tt-save-pill-text {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
 
 /* Fills its column in .tt-header-left (above): the sidebar-wide slot when the sidebar is open, just its label when collapsed. */
 .tt-app-name {

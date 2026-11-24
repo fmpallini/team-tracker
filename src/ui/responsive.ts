@@ -10,10 +10,12 @@ import type { Prefs } from '../core/types'
 const SPLIT_HIDE_BELOW_PX = 900
 const SIDEBAR_HIDE_BELOW_PX = 650
 // The header's mandatory pieces are the save-state pill (unsaved work must
-// stay visible; it shrinks with an ellipsis if it has to) and the close-file
-// (🔒) and settings (⚙) buttons — everything else (sidebar collapse toggle,
-// app name, search bar, the active-team indicator, the install/promo button,
-// fullscreen, help) has a keyboard equivalent (Ctrl+Shift+K/Ctrl+F reopen the
+// stay visible; while healthy it is just its icon, and an alert shrinks with
+// an ellipsis if it has to) and the close-file (🔒) and settings (⚙) buttons,
+// plus the active-team group whenever the sidebar is hidden — under
+// SIDEBAR_HIDE_BELOW_PX it is the only place left to see the due counts and
+// change team. Everything else (sidebar collapse toggle, app name, search bar,
+// the install/promo button, help) has a keyboard equivalent (Ctrl+Shift+K/Ctrl+F reopen the
 // app-name/search actions) or simply isn't essential moment-to-moment. Below this width the two
 // floored-but-not-shrinkable clusters either side of them (headerRight's
 // icon buttons never shrink at all; headerLeft's app name/search bar bottom
@@ -23,9 +25,10 @@ const SIDEBAR_HIDE_BELOW_PX = 650
 // hiding them piecemeal (search first, then the team indicator, then...)
 // just moves the collision to a different narrower width instead of
 // removing it, since the mandatory cluster alone is what actually needs
-// guaranteed room. Comfortably above SIDEBAR_HIDE_BELOW_PX so a *manual*
-// sidebar collapse (which reveals the team indicator) can't reopen the gap
-// in the 650-840px band.
+// guaranteed room. The team group kept beside them sits in the compact
+// header's shrinkable 1fr track (styles.css .tt-header-compact), so it
+// ellipsizes rather than collides at any width, a manual sidebar collapse in
+// the 650-840px band included.
 //
 // Tuned at the M text size (15px root). The header's clusters are sized in rem,
 // so they grow with the text-size setting while the window width doesn't: at XL
@@ -38,7 +41,8 @@ const HEADER_COMPACT_BELOW_PX = 840
 // The centred team indicator only gets what the side clusters leave over (see
 // .tt-header-center in styles.css: 100vw − 220px − 47rem). Below this width
 // that is under ~7rem — a stub that shows a caret and half a letter — so the
-// slot is dropped outright instead. The two constants are that formula solved
+// slot is dropped outright instead, until the compact header takes over and
+// frees the left cluster's room for it. The two constants are that formula solved
 // for 7rem; keep them in step with it. rem part scales with the text size on
 // its own (root px), the 220px part does not.
 const TEAM_SLOT_FIXED_PX = 220
