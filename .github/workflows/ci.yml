@@ -85,7 +85,23 @@ jobs:
       actions: read
     outputs:
       skip: ${{ steps.plan.outputs.skip }}
+      playwright: ${{ steps.playwright.outputs.version }}
     steps:
+      # The E2E parts run inside the Playwright image whose tag must match the
+      # installed @playwright/test exactly (the image's browser build is tied
+      # to it). Read from the lockfile, so a Dependabot bump moves the image
+      # with it; only that one file is checked out.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          sparse-checkout: package-lock.json
+          sparse-checkout-cone-mode: false
+      - id: playwright
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Playwright $version"
       - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
@@ -118,12 +134,22 @@ jobs:
     name: E2E ${{ matrix.part }}
     needs: e2e-plan
     if: needs.e2e-plan.outputs.skip != 'true'
-    # Pinned, not ubuntu-latest: `playwright install-deps` apt-gets fonts and
-    # xvfb on every run, and on the Ubuntu 26.04 image latest moved to that
-    # download crawled at ~35 kB/s (5 to 11 minutes for 25 MB, against ~20 s
-    # on 24.04). Pinning also keeps the fonts the layout specs measure against
-    # from changing under us with an image migration.
+    # Inside the official Playwright image, which ships Chromium and every OS
+    # library and font it needs. It replaced a Chromium cache plus
+    # `playwright install-deps` on the bare runner: that apt download took
+    # ~20 s or ~5.5 min with nothing in between (slow on 7 of 9 parts in a
+    # side-by-side probe, even on ubuntu-24.04), and one slow part set the
+    # whole run's time; release PRs also missed the cache outright, since a PR
+    # can't read dev's cache. The image starts in ~25 s every time (probe:
+    # slowest part 3.6-4.3 min against 8.0-9.5). Its tag follows
+    # @playwright/test (see e2e-plan), which also pins the fonts the layout
+    # specs measure against. --user 1001 is the runner's uid, so checkout and
+    # the workspace stay writable; --ipc=host is Playwright's advice for
+    # Chromium in Docker (the default 64 MB /dev/shm can crash it).
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.e2e-plan.outputs.playwright }}-noble
+      options: --user 1001 --ipc=host
     timeout-minutes: 20
     strategy:
       # One red part must not hide the other part's result (or its trace artifact).
@@ -147,24 +173,6 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-
-      # The Chromium build is ~150MB and only changes when @playwright/test
-      # does, so key the cache on that package's version — not on the whole
-      # lockfile, which every app version bump edits (that missed the cache on
-      # every release and stored a fresh 268MB copy each time). The OS-level
-      # libraries `--with-deps` installs live outside ~/.cache/ms-playwright
-      # and are not cached, hence the separate install-deps on a hit.
-      - id: playwright-version
-        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
-      - if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
-      - if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
 
       # The same suite, in three parts that together cover every spec (the two
       # Playwright projects in playwright.config.ts): leak.spec.ts is one serial
