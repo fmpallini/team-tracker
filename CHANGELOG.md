@@ -15,6 +15,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
 ### Fixed
 - Ctrl+F did nothing in a narrow window; search now opens from the header there too.
+- The notes boxes in tasks, milestones and risks showed square bottom corners; they are rounded again.
 
 ## [3.9.2] - 2026-11-23
 

@@ -1657,7 +1657,11 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-trash.drag-over { background: rgba(var(--accent-rgb), .12); }
 
 .tt-kanban-form { display: flex; flex-direction: column; gap: .65rem; }
-.tt-kanban-form .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
+/* overflow: clip — the toolbar's panel fill and the ruled page are square boxes; without it they paint
+   over the rounded border's corners (the page's colour differs from the dialog's, so the bottom ones
+   showed square). Safe to clip: the editor's popups (more menu, @ and / lists) are fixed, on <body>.
+   The milestone and risk follow-up editors below are the same bordered box. */
+.tt-kanban-form .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); overflow: clip; }
 .tt-kanban-form .editor { min-height: 240px; max-height: 55vh; overflow-y: auto; }
 .tt-kanban-form-row { display: flex; gap: .6rem; }
 .tt-kanban-form-row .tt-field { flex: 1; }
@@ -1805,7 +1809,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-row:hover .tt-milestone-delete-btn, .tt-milestone-delete-btn:focus { opacity: 1; }
 .tt-milestone-row.tt-milestone-done-row .tt-milestone-title-input { text-decoration: line-through; color: var(--muted); }
 .tt-milestone-followup-row { padding: 0 0 .5rem .4rem; }
-.tt-milestone-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
+.tt-milestone-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); overflow: clip; }
 .tt-milestone-followup-row .editor { min-height: 7.5rem; max-height: 320px; overflow-y: auto; padding-bottom: 1.25rem; }
 
 /* Follow-up editors in risk and milestone rows show their toolbar only while focused, so an expanded row costs one editor, not an editor plus a 14-button strip. The press-then-release on an @ref chip that this layout shift would swallow is recovered in ui/editor.ts (onPressStart). */
@@ -2054,7 +2058,7 @@ select option { background: var(--bg); color: var(--fg); }
   box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), .55);
 }
 .tt-risk-followup-row { padding: 0 0 .5rem .4rem; }
-.tt-risk-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
+.tt-risk-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); overflow: clip; }
 .tt-risk-followup-row .editor { min-height: 7.5rem; max-height: 320px; overflow-y: auto; padding-bottom: 1.25rem; }
 
 /* Narrow pane: the five-column row genuinely cannot hold a readable title
