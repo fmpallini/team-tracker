@@ -14,6 +14,7 @@ See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
 ### Fixed
 - The focus ring on the header's due-dates button was cut off at its sides when the sidebar was collapsed.
+- Going back to the org chart after opening a person from the fast switch, the due list, search or an @mention now selects that person instead of the top of the chart.
 
 ## [3.8.1] - 2026-11-20
 
