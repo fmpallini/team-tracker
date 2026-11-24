@@ -294,8 +294,6 @@ body { background: var(--bg); color: var(--fg); }
 .tt-header-center { justify-self: center; min-width: 0; max-width: max(0px, min(28vw, calc(100vw - var(--tt-wco-reserve) - 220px - 47rem))); overflow: hidden; padding-block: .35rem; margin-block: -.35rem; }
 /* Width the window-controls overlay takes from the header's row (0 outside the installed PWA): the formula above and responsive.ts both budget against the usable row, not the window. */
 :root { --tt-wco-reserve: 0px; }
-/* responsive.ts: the slot is too narrow for more than a stub. Hides the content, not .tt-header-center itself — a display:none grid item drops out of the auto-placement and the right cluster would slide into its column. */
-.tt-header.tt-header-team-hidden .tt-header-team-indicator-group { display: none; }
 
 /* Window Controls Overlay (Chromium, installed PWA, Windows/ChromeOS): the OS
    draws its min/maximize/close caption buttons over the top-right corner of
@@ -410,31 +408,49 @@ body { background: var(--bg); color: var(--fg); }
 /* Same ✓ gutter as .tt-pane-menu-check / .tt-context-menu-check (history menu). */
 .tt-team-switcher-check { display: inline-block; width: 1.1em; color: var(--accent); font-weight: 700; flex: none; }
 
-/* Space-constrained override (src/ui/responsive.ts, below
-   HEADER_COMPACT_BELOW_PX, which grows with the text size): hides every
-   optional header element at once — wins over .tt-header-team-indicator.visible
-   above regardless of sidebar collapse state. What is left is the save-state
-   pill (so unsaved work stays visible), the close-file (🔒) and settings (⚙)
-   buttons: closing the file and reaching prefs must always be reachable;
-   everything else has a keyboard equivalent (Ctrl+Shift+K/Ctrl+F for the app
-   name/search) or simply isn't essential moment-to-moment. */
-.tt-header.tt-header-compact .tt-sidebar-toggle,
+/* Compact header (shell.ts renderCompact: below HEADER_COMPACT_BELOW_PX, which
+   grows with the text size, or with the sidebar collapsed once the team slot
+   is too narrow). Drops the app name, help and promo button; what is left is
+   all square controls or shrinkable pills: the sidebar toggle and the search
+   icon (each auto-hide keeps its way back, and Ctrl+F needs a box to focus),
+   the team group (team pill + other-teams due clock), which shows exactly when
+   the sidebar is hidden — then the only place to see the due counts and change
+   team without a hotkey — and the save pill, settings (⚙) and close-file (🔒). */
 .tt-header.tt-header-compact .tt-app-name,
-.tt-header.tt-header-compact .tt-search-wrap,
-.tt-header.tt-header-compact .tt-header-team-indicator-group,
 .tt-header.tt-header-compact .tt-btn-promo,
 .tt-header.tt-header-compact .tt-btn-help {
   display: none;
 }
-/* With the left and centre slots empty, give the right cluster the whole bar
-   (its 1fr share was half of it) and let the pill — the only part that can —
-   give way with an ellipsis rather than push the two buttons off the edge. */
-.tt-header.tt-header-compact { grid-template-columns: 0 0 minmax(0, 1fr); column-gap: 0; }
-.tt-header.tt-header-compact .tt-header-right { min-width: 0; gap: .5rem; justify-self: stretch; justify-content: flex-end; }
+/* Three columns, each cluster placed explicitly so a hidden one cannot shift
+   the others: the two left squares hug their content, the team group takes the
+   rest, the right cluster sits at the end. The right cluster's track is
+   minmax(0, auto): it is sized before the 1fr one, so the mandatory pill and
+   buttons win and the team name ellipsizes; only past that does the pill — the
+   only part of the cluster that can — give way with an ellipsis rather than
+   push the two buttons off the edge. The left cluster is a plain row here: its
+   grid columns are sized for the app name, which is gone. */
+.tt-header.tt-header-compact { grid-template-columns: auto minmax(0, 1fr) minmax(0, auto); }
+.tt-header.tt-header-compact .tt-header-left { grid-column: 1; display: flex; align-items: center; gap: .375rem; }
+.tt-header.tt-header-compact .tt-header-center { grid-column: 2; justify-self: start; max-width: 100%; }
+.tt-header.tt-header-compact .tt-header-right { grid-column: 3; min-width: 0; gap: .5rem; justify-content: flex-end; }
+/* Search in use (focused, or holding a query): the field takes the team group's
+   column, as it takes free space in the full header; the group returns when the
+   field folds back to its icon. */
+.tt-header.tt-header-compact:has(.tt-search-wrap:is(:focus-within, .has-value)) .tt-header-left { grid-column: 1 / 3; }
+.tt-header.tt-header-compact:has(.tt-search-wrap:is(:focus-within, .has-value)) .tt-header-center { display: none; }
 .tt-header.tt-header-compact .tt-save-pill-wrap,
 .tt-header.tt-header-compact .tt-save-pill { min-width: 0; }
 .tt-header.tt-header-compact .tt-save-pill-wrap { flex: 0 1 auto; }
 .tt-header.tt-header-compact .tt-save-pill-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* While nothing needs the user (Saved / Writing…) the pill is just its icon: the
+   state still reads from the tint and the spin, the hover title keeps the detail,
+   and the label stays in the accessibility tree (visually hidden, as
+   .tt-visually-hidden). States that ask for action — grant access, file not
+   written, export, read-only, no browser storage — keep their words. */
+.tt-header.tt-header-compact .tt-save-pill:is([data-state="ok"], [data-state="writing"]) { width: var(--tt-header-ctl-h); padding: 0; justify-content: center; }
+.tt-header.tt-header-compact .tt-save-pill:is([data-state="ok"], [data-state="writing"]) .tt-save-pill-text {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
 
 /* Fills its column in .tt-header-left (above): the sidebar-wide slot when the sidebar is open, just its label when collapsed. */
 .tt-app-name {
@@ -571,6 +587,30 @@ body { background: var(--bg); color: var(--fg); }
 .tt-modal-overlay { animation: tt-scrim-in var(--dur-base) var(--ease); }
 .tt-modal-dialog { animation: tt-rise-in var(--dur-base) var(--ease); }
 .tt-toast { animation: tt-toast-in var(--dur-base) var(--ease); }
+/* Leaving (modal.ts leaveToast): a quicker fade back down, holding the end state until the node is removed. Already gone for the app, so it takes no clicks. */
+@keyframes tt-toast-out { to { opacity: 0; transform: translateY(4px); } }
+.tt-toast.tt-toast-leaving { animation: tt-toast-out var(--dur-fast) var(--ease) forwards; pointer-events: none; }
+/* Popovers (menus, dropdowns, pickers, autocomplete) arrive the way dialogs do, at the
+   faster pace a menu wants; they leave at once, as menus do. An element shown by a
+   display change replays its animation, so a popover kept in the DOM and toggled
+   (the search dropdown) pops in on every open, not just the first. */
+@keyframes tt-pop-in { from { opacity: 0; transform: translateY(-4px); } }
+.tt-team-switcher-dropdown, .tt-date-picker-popover, .tt-pane-menu, .tt-search-dropdown,
+.tt-atref-dropdown, .tt-context-menu, .tt-backlinks-panel, .tt-emoji-popup, .tt-assignee-menu {
+  animation: tt-pop-in var(--dur-fast) var(--ease);
+}
+/* What a layout change reveals fades in; the layout itself snaps. Sizes are never
+   animated: the responsive layout and every ResizeObserver in the app would re-run on
+   each frame, and split view, which follows the panes area's width, could flip mid-way
+   (responsive.ts). Each of these is a display:none → shown change, which replays it:
+   the sidebar's content, pane 2 when split view returns, the header's team pill and
+   due clock, and the calendar unfolding (.tt-daily-reveal, set by daily-notes.ts only
+   on an unfold, so a day change that re-mounts the column does not blink it). */
+@keyframes tt-fade-in { from { opacity: 0; } }
+.tt-sidebar-content, .tt-pane[data-pane-idx="1"], .tt-header-team-indicator-group,
+.tt-header-team-indicator, .tt-header-due-summary, .tt-daily-reveal .tt-daily-calendar-slot {
+  animation: tt-fade-in var(--dur-base) var(--ease);
+}
 .tt-btn { transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease); }
 /* Hoverable surfaces ease their wash the way buttons do (a button's own rule above wins where one is both). */
 :where(.tt-team-item, .tt-team-switcher-item, .tt-org-box, .tt-kanban-card, .tt-risk-row, .tt-milestone-row, .tt-due-row, .tt-pane-menu-item, .tt-pane-tab, .tt-palette-item, .tt-search-row, .tt-atref-item, .tt-context-menu-item, .tt-backlinks-row, .tt-calendar-day, .tt-emoji-grid button, .tt-emoji-tab, .tt-prefs-tab-btn, .tt-prefs-template-row, .tt-data-team-row, .tt-size-step, .tt-assignee-toggle) { transition: background-color var(--dur-fast) var(--ease); }
@@ -845,6 +885,8 @@ body { background: var(--bg); color: var(--fg); }
   border: 2px solid var(--border);
 }
 .tt-pane.focused { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+/* Moving focus between panes (click, Alt+arrows) eases the accent frame across instead of blinking it. */
+.tt-pane { transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
 .tt-pane-divider { cursor: col-resize; background: var(--border); }
 .tt-pane-divider:hover { background: var(--accent); }
 .tt-pane-bar {
@@ -863,6 +905,8 @@ body { background: var(--bg); color: var(--fg); }
   background: transparent; color: var(--fg); font-family: var(--font-display); font-size: .95rem; white-space: nowrap; cursor: pointer;
 }
 .tt-pane-tab { position: relative; }
+/* The current tab's bar eases in with its wash (the shared row rule eases only the wash). */
+.tt-pane-tab { transition: background-color var(--dur-fast) var(--ease), border-bottom-color var(--dur-fast) var(--ease); }
 /* The F-key that opens the tab: a tiny corner tag, lower right, so it costs no width. */
 .tt-pane-tab-key { position: absolute; right: 3px; bottom: 2px; font-family: var(--font-data); font-size: .55rem; line-height: 1; color: var(--muted); font-weight: 400; pointer-events: none; }
 .tt-pane-tab-key::before { content: attr(data-key); }
@@ -1068,7 +1112,12 @@ body { background: var(--bg); color: var(--fg); }
 .tt-search-target-flash.tt-search-target-flash {
   outline: none;
   box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), .55);
+  animation: tt-land-pulse .6s ease-out;
 }
+/* Landing on a result: the ring starts strong and settles to its resting weight, the
+   same "look here" the pane-title flash gives a day change, so the eye finds the item
+   on a long board. One pulse, its own length (a one-off flash, like the others). */
+@keyframes tt-land-pulse { from { box-shadow: inset 0 0 0 3px rgba(var(--accent-rgb), .95); } }
 
 /* Editor */
 .tt-editor { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }
@@ -1608,7 +1657,11 @@ body { background: var(--bg); color: var(--fg); }
 .tt-kanban-trash.drag-over { background: rgba(var(--accent-rgb), .12); }
 
 .tt-kanban-form { display: flex; flex-direction: column; gap: .65rem; }
-.tt-kanban-form .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
+/* overflow: clip — the toolbar's panel fill and the ruled page are square boxes; without it they paint
+   over the rounded border's corners (the page's colour differs from the dialog's, so the bottom ones
+   showed square). Safe to clip: the editor's popups (more menu, @ and / lists) are fixed, on <body>.
+   The milestone and risk follow-up editors below are the same bordered box. */
+.tt-kanban-form .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); overflow: clip; }
 .tt-kanban-form .editor { min-height: 240px; max-height: 55vh; overflow-y: auto; }
 .tt-kanban-form-row { display: flex; gap: .6rem; }
 .tt-kanban-form-row .tt-field { flex: 1; }
@@ -1756,7 +1809,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-milestone-row:hover .tt-milestone-delete-btn, .tt-milestone-delete-btn:focus { opacity: 1; }
 .tt-milestone-row.tt-milestone-done-row .tt-milestone-title-input { text-decoration: line-through; color: var(--muted); }
 .tt-milestone-followup-row { padding: 0 0 .5rem .4rem; }
-.tt-milestone-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
+.tt-milestone-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); overflow: clip; }
 .tt-milestone-followup-row .editor { min-height: 7.5rem; max-height: 320px; overflow-y: auto; padding-bottom: 1.25rem; }
 
 /* Follow-up editors in risk and milestone rows show their toolbar only while focused, so an expanded row costs one editor, not an editor plus a 14-button strip. The press-then-release on an @ref chip that this layout shift would swallow is recovered in ui/editor.ts (onPressStart). */
@@ -2005,7 +2058,7 @@ select option { background: var(--bg); color: var(--fg); }
   box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), .55);
 }
 .tt-risk-followup-row { padding: 0 0 .5rem .4rem; }
-.tt-risk-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); }
+.tt-risk-followup-row .tt-editor { height: auto; border: 1px solid var(--border); border-radius: var(--r-md); overflow: clip; }
 .tt-risk-followup-row .editor { min-height: 7.5rem; max-height: 320px; overflow-y: auto; padding-bottom: 1.25rem; }
 
 /* Narrow pane: the five-column row genuinely cannot hold a readable title

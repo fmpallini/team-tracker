@@ -28,8 +28,8 @@ const offenders = (found: string[]): string[] => found.sort()
 // --- stylesheet rules -----------------------------------------------------
 
 describe('stylesheet: motion', () => {
-  /** One-off attention flashes with their own lengths (pane title, promo, milestone done, the save spinner). */
-  const OWN_TIMING = ['tt-save-pill-spin', 'tt-promo-flash', 'tt-pane-title-flash', 'tt-done-flash', 'tt-done-pop']
+  /** One-off attention flashes with their own lengths (pane title, promo, milestone done, the landing ring, the save spinner). */
+  const OWN_TIMING = ['tt-save-pill-spin', 'tt-promo-flash', 'tt-pane-title-flash', 'tt-done-flash', 'tt-done-pop', 'tt-land-pulse']
 
   test('transitions take their duration and easing from the motion tokens', () => {
     const bad: string[] = []

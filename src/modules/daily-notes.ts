@@ -64,31 +64,42 @@ function resolveCalendarAnchor(store: Store, paneIdx: 0 | 1, date: string): stri
  * Transient "the window is too narrow for the calendar column" flag, set by
  * main.ts's responsive layout (ui/responsive.ts's CALENDAR_HIDE_BELOW_PX). It
  * folds the calendar on top of — never instead of — the user's own
- * `nav.calendarCollapsed`: while it's on the column is collapsed and its
- * toggle button hidden regardless of the pref, and when it clears each
- * mounted pane reverts to whatever the pref says. Module-level (window width
+ * `nav.calendarCollapsed`: while it's on the column is collapsed regardless of
+ * the pref, and when it clears each mounted pane reverts to whatever the pref
+ * says. Its toggle stays, as the sidebar's and the split view's do: a click
+ * while folded lifts the flag (see toggleDailyCalendar). Module-level (window width
  * is global) with one entry per mounted daily pane so each can read its own
  * store's pref; entries are dropped by the renderer's teardown.
  */
 let calendarSpaceConstrained = false
-interface CalendarColEntry { col: HTMLElement; toggleBtn: HTMLElement; store: Store }
+/** `collapsed` is what the column last showed, so an unfold can be told apart from a (re-)mount. */
+interface CalendarColEntry { col: HTMLElement; store: Store; collapsed?: boolean }
 const mountedCalendarCols = new Set<CalendarColEntry>()
 
 function applyCalendarCollapsed(entry: CalendarColEntry): void {
-  entry.col.classList.toggle(
-    'tt-daily-collapsed',
-    calendarSpaceConstrained || entry.store.doc.nav.calendarCollapsed,
-  )
-  entry.toggleBtn.hidden = calendarSpaceConstrained
+  const collapsed = calendarSpaceConstrained || entry.store.doc.nav.calendarCollapsed
+  entry.col.classList.toggle('tt-daily-collapsed', collapsed)
+  // Fade the month in only when it unfolds in place (styles.css .tt-daily-reveal), not
+  // when a day change re-mounts the column already open — that would blink the calendar.
+  if (entry.collapsed === true && !collapsed) entry.col.classList.add('tt-daily-reveal')
+  entry.collapsed = collapsed
 }
 
 /**
  * Shows/hides the calendar column of every mounted daily pane (nav.calendarCollapsed
- * is per document, so they all follow). A no-op while the window is too narrow for
- * the column: nothing is visible to toggle, and the pref must not flip unseen.
+ * is per document, so they all follow). While the window is too narrow for the
+ * column it is folded whatever the pref says, so a click there means "show it
+ * anyway": it lifts the narrow-window flag (responsive.ts is edge-triggered, so
+ * the flag only returns on the next crossing below the threshold) and makes the
+ * pref "shown", as the sidebar toggle and the split button do for theirs.
  */
 export function toggleDailyCalendar(store: Store): void {
-  if (calendarSpaceConstrained) return
+  if (calendarSpaceConstrained) {
+    calendarSpaceConstrained = false
+    if (store.doc.nav.calendarCollapsed) store.updateNav((d) => { d.nav.calendarCollapsed = false })
+    for (const entry of mountedCalendarCols) applyCalendarCollapsed(entry)
+    return
+  }
   store.updateNav((d) => { d.nav.calendarCollapsed = !d.nav.calendarCollapsed })
   for (const entry of mountedCalendarCols) if (entry.store === store) applyCalendarCollapsed(entry)
 }
@@ -210,7 +221,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
   // Registered for the lifetime of this mount so setDailyCalendarSpaceConstrained()
   // can fold/unfold it as the window crosses the narrow threshold; unregistered
   // in the teardown below.
-  const calendarColEntry: CalendarColEntry = { col: calendarCol, toggleBtn, store: ctx.store }
+  const calendarColEntry: CalendarColEntry = { col: calendarCol, store: ctx.store }
   mountedCalendarCols.add(calendarColEntry)
   applyCalendarCollapsed(calendarColEntry)
   const badgeSlot = el('div', { class: 'tt-daily-badge-slot' })

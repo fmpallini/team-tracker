@@ -10,7 +10,7 @@ import { buildDoc, openDoc } from './layout-fixtures'
 for (const size of ['XS', 'XL'] as const) {
   test.describe(`kanban board in split view, font size ${size}`, () => {
     test.beforeEach(async ({ page }) => {
-      await openDoc(page, buildDoc(size, { kind: 'actions' }, { splitRight: { kind: 'general' } }), { width: 1280, height: 900 })
+      await openDoc(page, buildDoc(size, { kind: 'actions' }, { splitRight: { kind: 'general' } }), { width: 1400, height: 900 }) // XL splits from a 1080px panes area
       await expect(page.locator('.tt-kanban-card').first()).toBeVisible()
     })
 

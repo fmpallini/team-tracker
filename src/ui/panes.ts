@@ -953,7 +953,7 @@ ${t(lc, 'pane_history_hint')}`
   /**
    * Toggles against the *effective* (visible) split state, not the raw
    * persisted `nav.split` — when the responsive layout (responsive.ts) has
-   * force-hidden the split view because the window is narrow, clicking this
+   * force-hidden the split view because the panes area is narrow, clicking this
    * button means "show it anyway" and must also clear that transient
    * override, or the click would appear to do nothing. See
    * PaneManager.setSplitSpaceConstrained. The un-split stash (pulling pane

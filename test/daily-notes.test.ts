@@ -661,7 +661,7 @@ describe('calendar auto-collapse when the window is space-constrained', () => {
     return el
   }
 
-  test('folds the calendar and hides its toggle while constrained, without touching nav.calendarCollapsed', () => {
+  test('folds the calendar while constrained, keeping its toggle and without touching nav.calendarCollapsed', () => {
     const { container, store, pm, loc } = setup(makeTeam())
     render(container, loc, store, pm)
     expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(false)
@@ -669,7 +669,7 @@ describe('calendar auto-collapse when the window is space-constrained', () => {
     setDailyCalendarSpaceConstrained(true)
 
     expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(true)
-    expect(calToggle(container).hidden).toBe(true)
+    expect(calToggle(container).hidden).toBe(false)
     expect(store.doc.nav.calendarCollapsed).toBe(false) // transient only
 
     setDailyCalendarSpaceConstrained(false)
@@ -678,7 +678,7 @@ describe('calendar auto-collapse when the window is space-constrained', () => {
     expect(calToggle(container).hidden).toBe(false)
   })
 
-  test('toggleDailyCalendar flips the preference and the mounted column, and does nothing while constrained', () => {
+  test('toggleDailyCalendar flips the preference and the mounted column', () => {
     const { container, store, pm, loc } = setup(makeTeam())
     render(container, loc, store, pm)
 
@@ -689,9 +689,33 @@ describe('calendar auto-collapse when the window is space-constrained', () => {
     expect(store.doc.nav.calendarCollapsed).toBe(false)
     expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(false)
 
+  })
+
+  test('toggling while constrained shows the calendar anyway, clearing a manual collapse too', () => {
+    const { container, store, pm, loc } = setup(makeTeam())
+    store.doc.nav.calendarCollapsed = true
+    render(container, loc, store, pm)
     setDailyCalendarSpaceConstrained(true)
+    expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(true)
+
     toggleDailyCalendar(store)
+
+    expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(false)
     expect(store.doc.nav.calendarCollapsed).toBe(false)
+    // An ordinary toggle again from here: the next click folds it as the user's own choice.
+    toggleDailyCalendar(store)
+    expect(store.doc.nav.calendarCollapsed).toBe(true)
+    expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(true)
+  })
+
+  test('only an unfold marks the column for the reveal fade, never a mount', () => {
+    const { container, store, pm, loc } = setup(makeTeam())
+    render(container, loc, store, pm)
+    expect(calCol(container).classList.contains('tt-daily-reveal')).toBe(false) // mounted open: no fade
+    toggleDailyCalendar(store)
+    expect(calCol(container).classList.contains('tt-daily-reveal')).toBe(false) // folding: nothing to reveal
+    toggleDailyCalendar(store)
+    expect(calCol(container).classList.contains('tt-daily-reveal')).toBe(true)
   })
 
   test('a pane mounted while already constrained comes up folded', () => {
