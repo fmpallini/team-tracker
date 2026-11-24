@@ -4,6 +4,12 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.9.1] - 2026-11-23
+
+### Fixed
+- Opening a file now shows "Opening …" under the start buttons, so a slow browser no longer looks like a hang.
+- When the browser's storage is slow to answer, a file opens in half the time, and is no longer briefly read-only without saying so.
+
 ## [3.9.0] - 2026-11-23
 
 ### Changed
