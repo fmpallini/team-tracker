@@ -2042,7 +2042,9 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
   //
   // The button is read-only safe (ui/readonly-lock.ts lets it through) since
   // copying only reads. The Insert group is left out of a read-only editor
-  // instead of being shown and refused, so the menu then holds only Copy.
+  // instead of being shown and refused, so the menu then holds Copy and Help.
+  // Help lives here rather than as its own toolbar button so the toolbar fits
+  // one row in half of a split window (F1 opens Help on the pane's tab).
 
   type MoreMenuOption = { label: string; hint?: string; run(): void }
 
@@ -2107,7 +2109,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       { label: t(locale, 'editor_copy_option_formatted'), run: copyFormatted },
       { label: t(locale, 'editor_copy_option_markdown'), run: copyMarkdown },
     ]
-    moreMenuOptions = [...insert, ...copy]
+    const help: MoreMenuOption[] = [{ label: t(locale, 'editor_help_title'), run: () => showHelp(locale, { tab: 'editor' }) }]
+    moreMenuOptions = [...insert, ...copy, ...help]
     moreMenuSelected = 0
     const row = (option: MoreMenuOption): HTMLElement => {
       const i = moreMenuOptions.indexOf(option)
@@ -2130,7 +2133,8 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
       'div',
       { class: 'tt-atref-list' },
       ...group(t(locale, 'editor_more_group_insert'), insert),
-      ...group(t(locale, 'editor_more_group_copy'), copy)
+      ...group(t(locale, 'editor_more_group_copy'), copy),
+      ...group(t(locale, 'editor_more_group_help'), help)
     )
     moreMenuListEl = listEl
     moreMenuEl = el('div', { class: 'tt-atref-dropdown' }, listEl)
@@ -3040,8 +3044,7 @@ export function createEditor(hooks: EditorHooks, locale: Locale): Editor {
     el('span', { class: 'tt-editor-toolbar-spacer' }),
     // Read-only safe: ui/readonly-lock.ts refuses every other toolbar button in a read-only tab
     // (the menu itself drops its Insert group there, so only Copy stays reachable).
-    toolbarButton(icon('more'), t(locale, 'editor_more_title'), (btn) => openMoreMenu(btn), 'tt-editor-btn-readonly-safe'),
-    toolbarButton(icon('help'), t(locale, 'editor_help_title'), () => showHelp(locale, { tab: 'editor' }), 'tt-editor-btn-readonly-safe')
+    toolbarButton(icon('more'), t(locale, 'editor_more_title'), (btn) => openMoreMenu(btn), 'tt-editor-btn-readonly-safe')
   )
 
   const root = el('div', { class: 'tt-editor' }, toolbar, editorEl, imageInput)

@@ -1338,7 +1338,7 @@ ${t(lc, 'pane_history_hint')}`
     const favBtn = el(
       'button',
       {
-        class: 'tt-btn tt-pane-fav-btn',
+        class: 'tt-btn tt-btn-icon tt-pane-fav-btn',
         type: 'button',
         title: t(lc, isFav ? 'pane_fav_remove_title' : 'pane_fav_add_title'),
         'aria-pressed': String(isFav),

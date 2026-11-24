@@ -148,12 +148,12 @@ export interface IconButtonOptions {
   onclick: (e: Event) => void
 }
 
-/** A button holding only an icon. `title` and `aria-label` are set from the one string, so the tooltip and the accessible name cannot drift apart. */
+/** A button holding only an icon. `title` and `aria-label` are set from the one string, so the tooltip and the accessible name cannot drift apart. `tt-btn-icon` makes it a square at the pane control height (styles.css's three tiers). */
 export function iconButton(opts: IconButtonOptions): HTMLButtonElement {
   return el(
     'button',
     {
-      class: opts.bare ? opts.class : `tt-btn ${opts.class}`, type: 'button', title: opts.title, 'aria-label': opts.title,
+      class: opts.bare ? opts.class : `tt-btn tt-btn-icon ${opts.class}`, type: 'button', title: opts.title, 'aria-label': opts.title,
       ...(opts.tabindex ? { tabindex: opts.tabindex } : {}), disabled: opts.disabled ?? false,
       ...(opts.onmousedown ? { onmousedown: opts.onmousedown } : {}), onclick: opts.onclick,
     },

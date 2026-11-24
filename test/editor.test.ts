@@ -1696,12 +1696,16 @@ function closestLiOf(node: Node): HTMLElement | null {
 }
 
 describe('toolbar', () => {
-  test('help button opens the help modal', () => {
+  test('More > Editor help opens the help modal on its Editor tab', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
-    const helpBtn = editor.root.querySelector<HTMLButtonElement>('button[title="Editor help"]')!
-    helpBtn.click()
+    expect(editor.root.querySelector('button[title="Editor help"]')).toBeNull()
+    editor.root.querySelector<HTMLButtonElement>(`button[title="${t('en-US', 'editor_more_title')}"]`)!.click()
+    const item = Array.from(document.querySelectorAll<HTMLElement>('.tt-atref-item')).find((el) => el.textContent === t('en-US', 'editor_help_title'))!
+    item.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(document.querySelector('.tt-atref-dropdown')).toBeNull()
     expect(document.querySelector('.tt-modal-overlay')).not.toBeNull()
+    expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain(t('en-US', 'help_tab_editor'))
     // Close it for real: wiping document.body would leave the modal's
     // document-level keydown listener live, trapping Tab in later tests.
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -1735,14 +1739,14 @@ describe('toolbar', () => {
     item.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   }
 
-  test('More button opens Insert (template, reference) and Copy (plain/formatted/markdown) groups, closed on Escape', () => {
+  test('More button opens Insert (template, reference), Copy (plain/formatted/markdown) and Help groups, closed on Escape', () => {
     const editor = createEditor(makeHooks(), 'en-US')
     document.body.appendChild(editor.root)
 
     openCopyMenu(editor)
 
     const headers = Array.from(document.querySelectorAll('.tt-atref-dropdown .tt-atref-group-header')).map((el) => el.textContent)
-    expect(headers).toEqual([t('en-US', 'editor_more_group_insert'), t('en-US', 'editor_more_group_copy')])
+    expect(headers).toEqual([t('en-US', 'editor_more_group_insert'), t('en-US', 'editor_more_group_copy'), t('en-US', 'editor_more_group_help')])
     const labels = Array.from(document.querySelectorAll('.tt-atref-item')).map(menuItemLabel)
     expect(labels).toEqual([
       t('en-US', 'editor_more_template'),
@@ -1750,6 +1754,7 @@ describe('toolbar', () => {
       t('en-US', 'editor_copy_option_plain'),
       t('en-US', 'editor_copy_option_formatted'),
       t('en-US', 'editor_copy_option_markdown'),
+      t('en-US', 'editor_help_title'),
     ])
     const hints = Array.from(document.querySelectorAll('.tt-more-menu-hint')).map((el) => el.textContent)
     expect(hints).toEqual(['/', '@'])
@@ -1766,11 +1771,12 @@ describe('toolbar', () => {
       setEditorsReadOnly(true)
       openCopyMenu(editor)
       const headers = Array.from(document.querySelectorAll('.tt-atref-dropdown .tt-atref-group-header')).map((el) => el.textContent)
-      expect(headers).toEqual([t('en-US', 'editor_more_group_copy')])
+      expect(headers).toEqual([t('en-US', 'editor_more_group_copy'), t('en-US', 'editor_more_group_help')])
       expect(Array.from(document.querySelectorAll('.tt-atref-item')).map(menuItemLabel)).toEqual([
         t('en-US', 'editor_copy_option_plain'),
         t('en-US', 'editor_copy_option_formatted'),
         t('en-US', 'editor_copy_option_markdown'),
+        t('en-US', 'editor_help_title'),
       ])
     } finally {
       setEditorsReadOnly(false)
@@ -2594,7 +2600,6 @@ describe('toolbar', () => {
       t('en-US', 'editor_image_title'),
       t('en-US', 'editor_clear_format_title'),
       t('en-US', 'editor_more_title'),
-      t('en-US', 'editor_help_title'),
     ])
     editor.destroy()
   })

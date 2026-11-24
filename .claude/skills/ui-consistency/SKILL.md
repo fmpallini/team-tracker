@@ -25,6 +25,7 @@ The app's screens agree on a small set of rules. Reuse the helper or token inste
 - **Cards.** Task, risk, milestone and org box share one recipe (panel fill, `--shadow-card`, `--r-md`, `--card-hover`) defined once near the top of the file; new card-like items add `.tt-card` or join that list and keep only their own border, padding and layout.
 - **Focus.** Buttons and fields use the global outline ring. Card-like items and list rows inside scroll containers use the one inset ring (`box-shadow: inset 0 0 0 2px …`). Never `outline: none` without it.
 - **Spacing.** `--sp-1..4`; list items `--row-pad`, card rows `--card-row-pad`; panes pad `--sp-2` with no divider under the toolbar.
+- **Control sizes.** Three height tiers: `--ctl-h-lg` (app header), `--ctl-h` (a pane's bars and toolbars: pane bar, person header, editor and module toolbars), `--ctl-h-sm` (actions inside a row, card or list; 24px, the WCAG 2.2 minimum target). Icon-only buttons are squares: `iconButton()` adds `.tt-btn-icon` (tier 2 by default); a row action joins the tier-3 list beside it in styles.css. No one-off heights or paddings that move a button between tiers.
 - **Radii.** `--r-sm/md/lg`, pills (999px), circles (50%), or a hairline of 3px or less. **Colors.** Tokens only; literals live in the palette blocks.
 - **Row actions** rest faint (`opacity: .38`) and reach full strength on row hover or focus; decorative extras may stay hidden.
 
