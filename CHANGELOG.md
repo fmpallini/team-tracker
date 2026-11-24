@@ -4,6 +4,18 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.9.3] - 2026-11-24
+
+### Added
+- Smoother motion throughout: menus and pickers pop in, toasts fade out, and items slide into place when you reorder, move, delete or undo them.
+
+### Changed
+- In a narrow window the header keeps the team picker and due-date counters, with the save status shrinking to an icon to make room.
+- A sidebar, split view or calendar hidden for lack of room now always keeps a button to bring it back, and split view hides only when the panes themselves are too narrow.
+
+### Fixed
+- Ctrl+F did nothing in a narrow window; search now opens from the header there too.
+
 ## [3.9.2] - 2026-11-23
 
 ### Fixed
