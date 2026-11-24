@@ -16,6 +16,11 @@ import type { Doc, ModuleRef, PaletteId } from '../src/core/types'
 
 const TODAY = new Date().toLocaleDateString('en-CA')
 
+// Contrast is a property of the settled UI: a scan that lands mid-fade (a popover
+// popping in, the sidebar fading in on open) would measure a half-transparent
+// surface. Reduced motion turns every transition and animation off (styles.css).
+test.use({ reducedMotion: 'reduce' })
+
 type Theme = 'light' | 'dark'
 const THEMES: Theme[] = ['light', 'dark']
 

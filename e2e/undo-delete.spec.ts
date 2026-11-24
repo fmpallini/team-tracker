@@ -61,7 +61,7 @@ test.describe('undo on delete', () => {
     // on the sidebar-state checks below — on a loaded runner, an auto-retry
     // eating half its budget on those would otherwise make a genuinely slow
     // toast fail as "Undo button missing" instead of "slow".
-    const undo = page.locator('.tt-toast-action')
+    const undo = page.locator('.tt-toast:not(.tt-toast-leaving) .tt-toast-action')
     await expect(undo).toHaveText('Undo')
 
     await expect(page.getByRole('dialog')).toHaveCount(0)
@@ -99,7 +99,7 @@ test.describe('undo on delete', () => {
     await page.locator('.tt-team-item').nth(0).locator('.tt-team-edit-btn').click()
     await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
     await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
-    const undo = page.locator('.tt-toast-action')
+    const undo = page.locator('.tt-toast:not(.tt-toast-leaving) .tt-toast-action')
     await expect(undo).toHaveText('Undo')
 
     await openModule(page.locator('.tt-pane[data-pane-idx="0"]'), /Risks/i)

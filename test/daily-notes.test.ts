@@ -708,6 +708,16 @@ describe('calendar auto-collapse when the window is space-constrained', () => {
     expect(calCol(container).classList.contains('tt-daily-collapsed')).toBe(true)
   })
 
+  test('only an unfold marks the column for the reveal fade, never a mount', () => {
+    const { container, store, pm, loc } = setup(makeTeam())
+    render(container, loc, store, pm)
+    expect(calCol(container).classList.contains('tt-daily-reveal')).toBe(false) // mounted open: no fade
+    toggleDailyCalendar(store)
+    expect(calCol(container).classList.contains('tt-daily-reveal')).toBe(false) // folding: nothing to reveal
+    toggleDailyCalendar(store)
+    expect(calCol(container).classList.contains('tt-daily-reveal')).toBe(true)
+  })
+
   test('a pane mounted while already constrained comes up folded', () => {
     setDailyCalendarSpaceConstrained(true)
     const { container, store, pm, loc } = setup(makeTeam())

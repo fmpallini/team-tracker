@@ -299,7 +299,7 @@ test.describe('split view — an edit in one pane leaves the other pane mounted'
     ).toBe(true)
 
     // Undo the delete: the milestone comes back, and the live chip relinks.
-    await page.locator('.tt-toast-action').click()
+    await page.locator('.tt-toast:not(.tt-toast-leaving) .tt-toast-action').click()
     await expect(targetRow).toBeVisible()
     await expect(deadSpan).toHaveCount(0)
     await expect(chip).toHaveText('@Milestone 3')

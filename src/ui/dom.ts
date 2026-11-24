@@ -1,4 +1,5 @@
 // src/ui/dom.ts
+import { animateRowMoves } from './row-motion'
 type AttrValue = string | number | boolean | ((e: Event) => void)
 
 export function el<K extends keyof HTMLElementTagNameMap>(
@@ -89,9 +90,14 @@ export function neighbourRowId(root: HTMLElement, rowSelector: string, id: strin
  * is on the same row by `data-item-id`, or on its neighbour when the rebuild
  * took the row away. A select or text field keeps it, so the next field stays
  * one Tab off; anything else hands it to the row, where the arrows work. A
- * rebuild that placed focus itself wins.
+ * rebuild that placed focus itself wins. Rows that moved slide to their new
+ * place and new ones fade in (row-motion.ts) — every list rebuild comes
+ * through here, so that is all it takes for a list to animate. `animate:
+ * false` is for a layout whose rows cannot move on their own (see the org
+ * chart's call).
  */
-export function keepRowFocus(root: HTMLElement, rowSelector: string, rebuild: () => void): void {
+export function keepRowFocus(root: HTMLElement, rowSelector: string, rebuildRows: () => void, opts: { animate?: boolean } = {}): void {
+  const rebuild = opts.animate === false ? rebuildRows : (): void => animateRowMoves(root, rowSelector, rebuildRows)
   const active = document.activeElement
   const row = active instanceof HTMLElement && root.contains(active) ? active.closest<HTMLElement>(rowSelector) : null
   const id = row?.dataset.itemId

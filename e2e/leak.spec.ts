@@ -747,7 +747,7 @@ test.describe('resource growth over a long session', () => {
 
     async function deleteRow(kind: 'risk' | 'milestone'): Promise<void> {
       await page.locator(`.tt-${kind}-delete-btn`).first().click()
-      await expect(page.locator('.tt-toast-action')).toBeVisible()
+      await expect(page.locator('.tt-toast:not(.tt-toast-leaving) .tt-toast-action')).toBeVisible()
     }
 
     async function roundTrip(kind: 'risk' | 'milestone', title: string): Promise<void> {
@@ -759,7 +759,7 @@ test.describe('resource growth over a long session', () => {
 
       // Delete, then undo — the click-driven cleanup path.
       await deleteRow(kind)
-      await page.locator('.tt-toast-action').click()
+      await page.locator('.tt-toast:not(.tt-toast-leaving) .tt-toast-action').click()
       await expect(page.locator(`.tt-${kind}-row`)).toHaveCount(1)
 
       // Delete again, and walk away — the mutation-driven cleanup path, left

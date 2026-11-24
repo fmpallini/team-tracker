@@ -507,7 +507,10 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
     const treeEl = el('div', { class: 'tt-people-tree tt-org-root' })
     const boxStops = rovingRows(treeEl, '.tt-org-box')
     function renderAll(): void {
-      keepRowFocus(treeEl, '.tt-org-box', rebuildTree)
+      // No row motion: the connector lines hang off each box's .tt-org-node wrapper
+      // (styles.css), so a sliding box would leave them pointing at its old place,
+      // and nodes nest, so animating those instead would compound a subtree's moves.
+      keepRowFocus(treeEl, '.tt-org-box', rebuildTree, { animate: false })
       boxStops.refresh()
     }
     function rebuildTree(): void {

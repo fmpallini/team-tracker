@@ -460,6 +460,31 @@ function getToastStack(): HTMLElement {
   return toastStack
 }
 
+/** A toast that is on screen and not already on its way out. */
+const LIVE_TOAST = '.tt-toast:not(.tt-toast-leaving)'
+
+/**
+ * Takes a toast off screen: it fades out where the browser runs the exit animation
+ * (styles.css .tt-toast-leaving) and is removed once that finishes; with nothing
+ * running — reduced motion, or jsdom, which has no getAnimations — it goes at once.
+ * From the moment it starts leaving it is gone as far as the app is concerned: it
+ * is inert (no clicks, no focus, not in the accessibility tree), matches no key
+ * and no longer counts against MAX_TOASTS.
+ */
+function leaveToast(node: Element): void {
+  if (node.classList.contains('tt-toast-leaving')) return
+  node.classList.add('tt-toast-leaving')
+  // Out of reach while it fades: its Undo must not be pressed, or read out beside the next toast's.
+  node.setAttribute('inert', '')
+  // getAnimations() flushes style, so it already sees the exit animation the class just set.
+  const running = typeof node.getAnimations === 'function' ? node.getAnimations() : []
+  if (running.length === 0) {
+    node.remove()
+    return
+  }
+  void Promise.allSettled(running.map((a) => a.finished)).then(() => node.remove())
+}
+
 export function toast(msg: string, opts?: ToastOptions): void {
   const stack = getToastStack()
   const kind = opts?.kind ?? 'info'
@@ -468,8 +493,10 @@ export function toast(msg: string, opts?: ToastOptions): void {
     const action = opts.action
     body.push(el('button', { class: 'tt-toast-action', type: 'button', onclick: () => action.onClick() }, action.label))
   }
+  // A same-key toast is replaced outright, not faded: the new one says the same
+  // thing, updated, and fading the old one beside it would show both for a moment.
   if (opts?.key) {
-    stack.querySelector(`.tt-toast[data-toast-key="${opts.key}"]`)?.remove()
+    stack.querySelector(`${LIVE_TOAST}[data-toast-key="${opts.key}"]`)?.remove()
   }
   // The close mark is decorative: the whole toast is the click target (below) and was never a tab stop, so a button here would only add one.
   const node = el(
@@ -481,7 +508,7 @@ export function toast(msg: string, opts?: ToastOptions): void {
   )
   if (opts?.key) node.dataset.toastKey = opts.key
   function dismiss(): void {
-    node.remove()
+    leaveToast(node)
   }
   // A click anywhere in the toast dismisses it, including on the action
   // button — the button's own onclick (above) runs first (event target),
@@ -491,9 +518,8 @@ export function toast(msg: string, opts?: ToastOptions): void {
   // Trim from the top (oldest) — including sticky ones, which is the point:
   // a sticky toast that has been on screen through three later messages has
   // said what it had to say.
-  while (stack.childElementCount > MAX_TOASTS) {
-    stack.firstElementChild?.remove()
-  }
+  const live = stack.querySelectorAll(LIVE_TOAST)
+  for (let i = 0; i < live.length - MAX_TOASTS; i++) leaveToast(live[i]!)
   if (!opts?.sticky) {
     setTimeout(dismiss, opts?.duration ?? DEFAULT_TOAST_MS)
   }
@@ -508,9 +534,10 @@ export function toast(msg: string, opts?: ToastOptions): void {
  * and remove it directly instead.
  */
 export function isToastShowing(key: string): boolean {
-  return toastStack?.querySelector(`.tt-toast[data-toast-key="${key}"]`) != null
+  return toastStack?.querySelector(`${LIVE_TOAST}[data-toast-key="${key}"]`) != null
 }
 
 export function dismissToast(key: string): void {
-  toastStack?.querySelector(`.tt-toast[data-toast-key="${key}"]`)?.remove()
+  const node = toastStack?.querySelector(`${LIVE_TOAST}[data-toast-key="${key}"]`)
+  if (node) leaveToast(node)
 }

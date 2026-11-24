@@ -72,14 +72,17 @@ function resolveCalendarAnchor(store: Store, paneIdx: 0 | 1, date: string): stri
  * store's pref; entries are dropped by the renderer's teardown.
  */
 let calendarSpaceConstrained = false
-interface CalendarColEntry { col: HTMLElement; store: Store }
+/** `collapsed` is what the column last showed, so an unfold can be told apart from a (re-)mount. */
+interface CalendarColEntry { col: HTMLElement; store: Store; collapsed?: boolean }
 const mountedCalendarCols = new Set<CalendarColEntry>()
 
 function applyCalendarCollapsed(entry: CalendarColEntry): void {
-  entry.col.classList.toggle(
-    'tt-daily-collapsed',
-    calendarSpaceConstrained || entry.store.doc.nav.calendarCollapsed,
-  )
+  const collapsed = calendarSpaceConstrained || entry.store.doc.nav.calendarCollapsed
+  entry.col.classList.toggle('tt-daily-collapsed', collapsed)
+  // Fade the month in only when it unfolds in place (styles.css .tt-daily-reveal), not
+  // when a day change re-mounts the column already open — that would blink the calendar.
+  if (entry.collapsed === true && !collapsed) entry.col.classList.add('tt-daily-reveal')
+  entry.collapsed = collapsed
 }
 
 /**

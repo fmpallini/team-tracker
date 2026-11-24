@@ -539,6 +539,46 @@ test('the toast stack keeps at most three, dropping the oldest first', () => {
   expect(texts).toEqual(['two', 'three', 'four'])
 })
 
+// Where the browser runs the exit fade, a dismissed toast stays on screen until it
+// finishes — but it is gone for the app from the start: no clicks, no key match, no
+// slot in the stack. jsdom has no getAnimations, so it is stubbed here.
+describe('a toast fading out', () => {
+  let finish: () => void = () => {}
+  beforeEach(() => {
+    const finished = new Promise<void>((resolve) => { finish = resolve })
+    ;(HTMLElement.prototype as unknown as { getAnimations: () => unknown[] }).getAnimations = function (this: HTMLElement) {
+      return this.classList.contains('tt-toast-leaving') ? [{ finished }] : []
+    }
+  })
+  afterEach(() => {
+    delete (HTMLElement.prototype as unknown as { getAnimations?: unknown }).getAnimations
+  })
+
+  test('stays until the fade ends, then is removed', async () => {
+    toast('bye')
+    const node = document.querySelector<HTMLElement>('.tt-toast')!
+    node.click()
+    expect(node.isConnected).toBe(true)
+    expect(node.classList.contains('tt-toast-leaving')).toBe(true)
+    expect(node.hasAttribute('inert')).toBe(true) // its Undo can no longer be pressed or read out
+    finish()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(node.isConnected).toBe(false)
+  })
+
+  test('no longer matches its key or counts against the stack limit', async () => {
+    const { isToastShowing, dismissToast } = await import('../src/ui/modal')
+    toast('keyed', { key: 'k', sticky: true })
+    dismissToast('k')
+    expect(isToastShowing('k')).toBe(false)
+    toast('one', { sticky: true })
+    toast('two', { sticky: true })
+    toast('three', { sticky: true })
+    // three live toasts: the fading one does not push the oldest out
+    expect([...document.querySelectorAll('.tt-toast:not(.tt-toast-leaving)')].map((n) => n.textContent)).toEqual(['one', 'two', 'three'])
+  })
+})
+
 describe('button icons', () => {
   const iconNames = (): string[] =>
     [...document.querySelectorAll('.tt-modal-buttons button')].map((b) => b.querySelector('.tt-icon')?.className.split(' ').pop() ?? '')

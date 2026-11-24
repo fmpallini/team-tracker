@@ -587,6 +587,30 @@ body { background: var(--bg); color: var(--fg); }
 .tt-modal-overlay { animation: tt-scrim-in var(--dur-base) var(--ease); }
 .tt-modal-dialog { animation: tt-rise-in var(--dur-base) var(--ease); }
 .tt-toast { animation: tt-toast-in var(--dur-base) var(--ease); }
+/* Leaving (modal.ts leaveToast): a quicker fade back down, holding the end state until the node is removed. Already gone for the app, so it takes no clicks. */
+@keyframes tt-toast-out { to { opacity: 0; transform: translateY(4px); } }
+.tt-toast.tt-toast-leaving { animation: tt-toast-out var(--dur-fast) var(--ease) forwards; pointer-events: none; }
+/* Popovers (menus, dropdowns, pickers, autocomplete) arrive the way dialogs do, at the
+   faster pace a menu wants; they leave at once, as menus do. An element shown by a
+   display change replays its animation, so a popover kept in the DOM and toggled
+   (the search dropdown) pops in on every open, not just the first. */
+@keyframes tt-pop-in { from { opacity: 0; transform: translateY(-4px); } }
+.tt-team-switcher-dropdown, .tt-date-picker-popover, .tt-pane-menu, .tt-search-dropdown,
+.tt-atref-dropdown, .tt-context-menu, .tt-backlinks-panel, .tt-emoji-popup, .tt-assignee-menu {
+  animation: tt-pop-in var(--dur-fast) var(--ease);
+}
+/* What a layout change reveals fades in; the layout itself snaps. Sizes are never
+   animated: the responsive layout and every ResizeObserver in the app would re-run on
+   each frame, and split view, which follows the panes area's width, could flip mid-way
+   (responsive.ts). Each of these is a display:none → shown change, which replays it:
+   the sidebar's content, pane 2 when split view returns, the header's team pill and
+   due clock, and the calendar unfolding (.tt-daily-reveal, set by daily-notes.ts only
+   on an unfold, so a day change that re-mounts the column does not blink it). */
+@keyframes tt-fade-in { from { opacity: 0; } }
+.tt-sidebar-content, .tt-pane[data-pane-idx="1"], .tt-header-team-indicator-group,
+.tt-header-team-indicator, .tt-header-due-summary, .tt-daily-reveal .tt-daily-calendar-slot {
+  animation: tt-fade-in var(--dur-base) var(--ease);
+}
 .tt-btn { transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease); }
 /* Hoverable surfaces ease their wash the way buttons do (a button's own rule above wins where one is both). */
 :where(.tt-team-item, .tt-team-switcher-item, .tt-org-box, .tt-kanban-card, .tt-risk-row, .tt-milestone-row, .tt-due-row, .tt-pane-menu-item, .tt-pane-tab, .tt-palette-item, .tt-search-row, .tt-atref-item, .tt-context-menu-item, .tt-backlinks-row, .tt-calendar-day, .tt-emoji-grid button, .tt-emoji-tab, .tt-prefs-tab-btn, .tt-prefs-template-row, .tt-data-team-row, .tt-size-step, .tt-assignee-toggle) { transition: background-color var(--dur-fast) var(--ease); }
@@ -861,6 +885,8 @@ body { background: var(--bg); color: var(--fg); }
   border: 2px solid var(--border);
 }
 .tt-pane.focused { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+/* Moving focus between panes (click, Alt+arrows) eases the accent frame across instead of blinking it. */
+.tt-pane { transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
 .tt-pane-divider { cursor: col-resize; background: var(--border); }
 .tt-pane-divider:hover { background: var(--accent); }
 .tt-pane-bar {
@@ -879,6 +905,8 @@ body { background: var(--bg); color: var(--fg); }
   background: transparent; color: var(--fg); font-family: var(--font-display); font-size: .95rem; white-space: nowrap; cursor: pointer;
 }
 .tt-pane-tab { position: relative; }
+/* The current tab's bar eases in with its wash (the shared row rule eases only the wash). */
+.tt-pane-tab { transition: background-color var(--dur-fast) var(--ease), border-bottom-color var(--dur-fast) var(--ease); }
 /* The F-key that opens the tab: a tiny corner tag, lower right, so it costs no width. */
 .tt-pane-tab-key { position: absolute; right: 3px; bottom: 2px; font-family: var(--font-data); font-size: .55rem; line-height: 1; color: var(--muted); font-weight: 400; pointer-events: none; }
 .tt-pane-tab-key::before { content: attr(data-key); }
@@ -1084,7 +1112,12 @@ body { background: var(--bg); color: var(--fg); }
 .tt-search-target-flash.tt-search-target-flash {
   outline: none;
   box-shadow: inset 0 0 0 2px rgba(var(--accent-rgb), .55);
+  animation: tt-land-pulse .6s ease-out;
 }
+/* Landing on a result: the ring starts strong and settles to its resting weight, the
+   same "look here" the pane-title flash gives a day change, so the eye finds the item
+   on a long board. One pulse, its own length (a one-off flash, like the others). */
+@keyframes tt-land-pulse { from { box-shadow: inset 0 0 0 3px rgba(var(--accent-rgb), .95); } }
 
 /* Editor */
 .tt-editor { display: flex; flex-direction: column; height: 100%; min-height: 0; position: relative; }

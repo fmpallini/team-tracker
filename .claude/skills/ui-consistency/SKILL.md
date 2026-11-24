@@ -19,7 +19,7 @@ The app's screens agree on a small set of rules. Reuse the helper or token inste
 
 ## Style (styles.css)
 
-- **Motion.** `--dur-fast` (hover, reveal), `--dur-base` (entrances, sizing), `--ease`. Hoverable surfaces ease their wash, revealed buttons ease opacity. Reduced motion is the one rule at the end of the file — never add per-rule overrides.
+- **Motion.** `--dur-fast` (hover, reveal), `--dur-base` (entrances, sizing), `--ease`. Hoverable surfaces ease their wash, revealed buttons ease opacity. Dialogs and toasts rise in (toasts also fade out via `leaveToast`); a new popover joins the `tt-pop-in` list; what a layout change reveals joins the `tt-fade-in` list — never animate a size (sidebar, split, calendar, header): ResizeObservers and the split threshold would re-run every frame. List rebuilds animate through `keepRowFocus` (row-motion.ts) with no extra code; pass `{ animate: false }` only when rows can't move alone (the org chart). Reduced motion is the one rule at the end of the file — never add per-rule overrides; JS-driven motion checks `prefers-reduced-motion` itself.
 - **Highlights.** `--hover-soft` (large surfaces), `--hover` (compact items, menus, icon buttons), `--selected` (keyboard-selected or current entry, stronger than hover), `--card-hover`. No raw `rgba(var(--accent-rgb), …)` in hover/selected rules.
 - **Current item.** Lists: a 3px bar (`--state-bar`) plus `--selected` fill. Tab strips and segmented controls: accent fill.
 - **Cards.** Task, risk, milestone and org box share one recipe (panel fill, `--shadow-card`, `--r-md`, `--card-hover`) defined once near the top of the file; new card-like items add `.tt-card` or join that list and keep only their own border, padding and layout.

@@ -388,6 +388,29 @@ describe('keepRowFocus', () => {
     expect(document.activeElement).toBe(row(root, 'b'))
   })
 
+  // The animation itself is row-motion.test.ts's; here only the routing through it.
+  test('animates a reorder through row-motion, unless the caller opts out', () => {
+    const animated: string[] = []
+    const proto = Element.prototype as unknown as { animate?: unknown }
+    proto.animate = function (this: HTMLElement) { animated.push(this.dataset.itemId!); return {} }
+    const rects = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const y = Array.from(this.parentElement?.children ?? []).indexOf(this) * 20
+      return { top: y, bottom: y + 20, left: 0, right: 100, width: 100, height: 20 } as DOMRect
+    })
+    try {
+      const root = list(['a', 'b'])
+      keepRowFocus(root, '.row', () => fill(root, ['b', 'a']))
+      expect(animated.sort()).toEqual(['a', 'b'])
+      animated.length = 0
+      keepRowFocus(root, '.row', () => fill(root, ['a', 'b']), { animate: false })
+      expect(animated).toEqual([])
+      expect(row(root, 'a').previousElementSibling).toBeNull() // the rebuild itself still ran
+    } finally {
+      delete proto.animate
+      rects.mockRestore()
+    }
+  })
+
   test('a checkbox hands focus to its row, so the arrows keep working', () => {
     const root = list(['a', 'b'])
     row(root, 'b').querySelector<HTMLElement>('.tick')!.focus()
