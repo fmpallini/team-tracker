@@ -1373,6 +1373,23 @@ ${t(lc, 'pane_history_hint')}`
     barEl.append(left, right)
   }
 
+  /**
+   * A person's page belongs to their group's org chart, so opening it makes
+   * that person the box the chart lands on, whichever way it was opened: a
+   * double-click on the box already did (its focusin), but the fast switch, a
+   * due 1:1, search, an @mention or a favorite never touch the chart. Back (or
+   * the chart's tab) then lands on that person; so does switching to the other
+   * pane when it already shows the chart, whose saved focus would otherwise
+   * win (focusPaneContent).
+   */
+  function rememberPersonInChart(idx: 0 | 1, teamId: string, ref: { personId: string; group: 'stakeholders' | 'members' }): void {
+    const chart = locKey({ teamId, ref: { kind: ref.group } })
+    itemMemo.set(chart, ref.personId)
+    const other = otherPaneIdx(idx)
+    const otherLoc = currentLoc(store.doc.nav.panes[other])
+    if (otherLoc && locKey(otherLoc) === chart) paneFocus[other] = null
+  }
+
   function renderBody(idx: 0 | 1): void {
     const container = bodyEls[idx]
     paneFocus[idx] = null
@@ -1388,6 +1405,7 @@ ${t(lc, 'pane_history_hint')}`
       container.appendChild(el('div', { class: 'tt-pane-empty' }, t(lc, 'pane_empty')))
       return
     }
+    if (loc.ref.kind === 'person') rememberPersonInChart(idx, loc.teamId, loc.ref)
     const renderer = modules.get(loc.ref.kind)
     if (!renderer) {
       container.appendChild(el('div', { class: 'tt-pane-placeholder' }, t(lc, 'module_placeholder')))

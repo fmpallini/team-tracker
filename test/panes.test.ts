@@ -1964,6 +1964,43 @@ describe('switchPane and the item a pane remembers', () => {
     expect(document.activeElement).toBe(item('actions-3'))
   })
 
+  // A stand-in org chart (one focusable box per person, the first focused on mount like the real one) and person page.
+  function registerPeople(pm: ReturnType<typeof createPaneManager>): void {
+    pm.registerModule('members', (container, _loc, ctx) => {
+      for (const id of ['p1', 'p2', 'p3']) {
+        const box = document.createElement('div')
+        box.setAttribute('data-item-id', id)
+        box.setAttribute('tabindex', '0')
+        container.appendChild(box)
+      }
+      if (ctx.paneIdx === ctx.store.doc.nav.focusedPane) (container.firstChild as HTMLElement).focus()
+    })
+    pm.registerModule('person', (container) => { container.appendChild(document.createElement('div')) })
+  }
+  const person = (personId: string) => ({ teamId: 'T', ref: { kind: 'person' as const, personId, group: 'members' as const } })
+
+  test('a person opened from outside the org chart (fast switch, due list, search) is where the chart lands on Back', () => {
+    const { store, pm } = split()
+    registerPeople(pm)
+    pm.toggleSplit()
+    pm.openInFocused({ teamId: 'T', ref: { kind: 'members' } })
+    expect(document.activeElement).toBe(item('p1'))
+    pm.openInFocused(person('p3'))
+    navigateFocusedHistory(pm, store, -1)
+    expect(document.activeElement).toBe(item('p3'))
+  })
+
+  test('the org chart in the other pane lands on the person just opened beside it', () => {
+    const { pm } = split()
+    registerPeople(pm)
+    pm.openBothPanes({ teamId: 'T', ref: { kind: 'actions' } }, { teamId: 'T', ref: { kind: 'members' } }, 1)
+    item('p2').focus()
+    pm.switchPane(0)
+    pm.openInFocused(person('p3'))
+    pm.switchPane(1)
+    expect(document.activeElement).toBe(item('p3'))
+  })
+
   test('an item that is gone leaves the module where it put focus', () => {
     const { store, pm } = split()
     pm.toggleSplit()
