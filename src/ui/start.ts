@@ -115,19 +115,40 @@ export function showStartScreen(
   /**
    * Every route into the app ends here: reconcile the decoded file with the browser's copy of the document
    * (asking whatever that needs), then hand the result to main.ts. Backing out of a question leaves the start screen as it is.
+   *
+   * Opens can overlap: the auto-open, the buttons and an OS launch each run on their own, and a stalled browser storage
+   * (core/stall.ts) keeps one waiting long enough for the user to pick another file. The file chosen last is the one
+   * that opens: each open takes a turn here, and one overtaken by a later turn mounts nothing. Turns are taken only
+   * once the file is in hand, so a picker the user cancels takes nothing from an open already under way. The
+   * reconciles themselves run one at a time, in turn order, so two never read the same browser copy or ask their
+   * questions at once; one overtaken while it waits never starts. `superseded` lets the auto-open also give way to an
+   * open the user has started but not yet finished choosing.
    */
   async function finishOpen(session: FileSession, opened: OpenedDoc, password: string | null, superseded?: () => boolean): Promise<void> {
+    const turn = ++latestTurn
+    const overtaken = (): boolean => turn !== latestTurn || superseded?.() === true
     // The file is read by now, but the browser's storage still has to answer: a large browser copy takes a moment, and
     // a stalled one up to core/stall.ts's deadline. Say what the app is doing until it mounts or the user backs out.
-    // Two opens can overlap (auto-open and one the user started); only the latest one clears the line.
-    const token = ++openingToken
     openingStatus.textContent = t(locale, 'start_opening', { name: session.name })
+    const before = reconciling
+    let done!: () => void
+    reconciling = new Promise<void>((r) => { done = r })
     try {
+      await before
+      if (overtaken()) return
       const db = await (opts?.liveDb ?? sharedLiveDb)()
       const result = await reconcileOpen({ locale, db, session, opened, password })
-      if (result && !superseded?.()) onOpen(result)
+      if (!result) return
+      // Never mounted, so never given the write lock: its persister has nothing to write, but still watches the store.
+      if (overtaken()) {
+        result.handle?.persister.dispose()
+        return
+      }
+      onOpen(result)
     } finally {
-      if (openingToken === token) openingStatus.textContent = ''
+      done()
+      // A later turn has put its own file on the line.
+      if (turn === latestTurn) openingStatus.textContent = ''
     }
   }
 
@@ -179,7 +200,9 @@ export function showStartScreen(
 
   // A live region, so it is announced, and in the DOM from the start (a region added along with its text often is not).
   const openingStatus = el('p', { class: 'tt-start-opening', role: 'status' })
-  let openingToken = 0
+  // finishOpen's turns, and the reconcile of the latest one to have started (settles however it ends).
+  let latestTurn = 0
+  let reconciling: Promise<void> = Promise.resolve()
 
   // Set the moment any explicit open starts (picker, reopen-last, OS launch,
   // fallback file, create). Auto-open-last checks it before acting: it runs
@@ -428,7 +451,7 @@ export function showStartScreen(
     // reflects/edits the pref; only the immediate re-open is suppressed.
     // ...and an open the user (or the OS launch) already started wins outright.
     if (autoLoad && !opts?.skipAutoLoad && !openStarted) {
-      // Checked again once reconciled: a slow or stalled browser storage can keep this open waiting long enough for
+      // Checked again by finishOpen: a slow or stalled browser storage can keep this open waiting long enough for
       // the user to open a file themselves, and that one wins.
       await finishOpen(result.session, plain, null, () => openStarted)
     }

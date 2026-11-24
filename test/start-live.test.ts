@@ -168,3 +168,51 @@ test('while the browser storage is answering, the start screen says which file i
   await vi.waitFor(() => expect(onOpen).toHaveBeenCalled())
   expect(status.textContent).toBe('')
 })
+
+describe('overlapping opens', () => {
+  const sessionB: FileSession = { handle: { isSameEntry: async () => false } as unknown as FileSystemFileHandle, name: 'other.tmv', lastModified: 1 }
+  const openBtn = (): HTMLButtonElement => Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Open file…')!
+
+  test('the file chosen last opens, even when the one chosen first finishes later; the reconciles run one at a time', async () => {
+    fsMocks.pickOpen
+      .mockResolvedValueOnce({ session, bytes: await serializePlain(docWith('first')) })
+      .mockResolvedValueOnce({ session: sessionB, bytes: await serializePlain(docWith('second')) })
+    // The first open's browser storage stalls; the second one's answers at once.
+    let answerFirst!: (d: LiveDb) => void
+    const liveDb = vi.fn()
+      .mockImplementationOnce(() => new Promise<LiveDb>((r) => { answerFirst = r }))
+      .mockImplementation(async () => db)
+    const onOpen = vi.fn()
+    showStartScreen('en-US', onOpen, { liveDb })
+    const status = document.querySelector('.tt-start-opening')!
+    openBtn().click()
+    await flush()
+    openBtn().click()
+    await flush()
+    expect(status.textContent).toBe('Opening other.tmv…')
+    // The second waits for the first's reconcile instead of running beside it.
+    expect(liveDb).toHaveBeenCalledTimes(1)
+    answerFirst(db)
+    await vi.waitFor(() => expect(onOpen).toHaveBeenCalled())
+    await flush()
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect((onOpen.mock.calls[0]![0] as OpenedDocument).session).toBe(sessionB)
+    expect(status.textContent).toBe('')
+  })
+
+  test('a picker the user cancels takes nothing from the open already under way', async () => {
+    fsMocks.pickOpen
+      .mockResolvedValueOnce({ session, bytes: await serializePlain(docWith('first')) })
+      .mockResolvedValueOnce(null)
+    let answer!: (d: LiveDb) => void
+    const onOpen = vi.fn()
+    showStartScreen('en-US', onOpen, { liveDb: () => new Promise<LiveDb>((r) => { answer = r }) })
+    openBtn().click()
+    await flush()
+    openBtn().click()
+    await flush()
+    answer(db)
+    await vi.waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1))
+    expect((onOpen.mock.calls[0]![0] as OpenedDocument).session).toBe(session)
+  })
+})
