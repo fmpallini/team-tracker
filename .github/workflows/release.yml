@@ -5,17 +5,27 @@ on:
     tags:
       - 'v*'
 
+# Deny by default, as in ci.yml: each job opts into exactly what it needs.
+permissions: {}
+
 jobs:
   build-and-release:
     name: Build and publish release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
       id-token: write
       attestations: write
 
     steps:
+      # persist-credentials: false — this job's token can write releases, and
+      # `npm ci` below runs dependency install scripts; a token left in
+      # .git/config would be readable by them. Nothing here pushes with git:
+      # `gh release create` takes the token from GH_TOKEN on its own step.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
@@ -98,24 +108,31 @@ jobs:
               --title "${{ github.ref_name }}"
           fi
 
-      # deploy-pages deploys this exact build (not a rebuild) so the live
-      # Pages site is provably the same bytes just attested above, not a
-      # separately-built copy that merely shares the same source.
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      # The Pages bundle is uploaded here, from the build just attested, and
+      # deploy-pages below publishes exactly these bytes (not a rebuild).
+      # Uploaded in this job, not the deploy job, for two reasons seen on
+      # v3.9.3: deploy-pages lists the run's artifacts about a second after an
+      # upload in its own job, and GitHub's listing can lag past that ("No
+      # artifacts named github-pages"); and re-running that failed job uploaded
+      # a second github-pages artifact, which deploy-pages then refuses
+      # ("Multiple artifacts"), so no re-run could recover. With the upload
+      # here, the job boundary gives the listing time, and re-running a failed
+      # deploy reuses the one artifact.
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          name: pwa-build
           path: dist/pwa
 
   # Publishes the same attested PWA build to GitHub Pages on every tagged
   # release — separate job so its own `pages`/`id-token` permissions and
   # `github-pages` environment stay scoped away from the release-asset job
-  # above. Deploys the artifact build-and-release already built and attested,
+  # above. Deploys the github-pages artifact build-and-release uploaded,
   # rather than rebuilding, so there's an unbroken chain from "attested" to
-  # "what's actually served."
+  # "what's actually served." Safe to re-run on its own if it fails.
   deploy-pages:
     name: Deploy PWA to GitHub Pages
     needs: build-and-release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       pages: write
       id-token: write
@@ -123,14 +140,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: pwa-build
-          path: dist/pwa
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: dist/pwa
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

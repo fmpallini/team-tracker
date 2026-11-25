@@ -1,4 +1,4 @@
-import { resolveFileId, fileLockKey, LOCK_REGISTRY_CAP } from '../src/core/file-identity'
+import { resolveFileId, fileLockKey, LOCK_REGISTRY_CAP, SAME_ENTRY_MS } from '../src/core/file-identity'
 import type { FileSession } from '../src/core/fs'
 import { StallError, STALL_MS } from '../src/core/stall'
 
@@ -20,9 +20,15 @@ function handle(entry: string, name = 'team.tmv'): FileSystemFileHandle {
   const h = {
     entry,
     name,
-    isSameEntry: async (other: { entry?: string }) => other.entry === entry,
+    // A dead handle never settles, as either side of the comparison (seen on an installed PWA).
+    isSameEntry: (other: { entry?: string; dead?: boolean }) =>
+      other.dead ? new Promise<boolean>(() => {}) : Promise.resolve(other.entry === entry),
   }
   return h as unknown as FileSystemFileHandle
+}
+
+function deadHandle(entry: string): FileSystemFileHandle {
+  return { entry, name: 'team.tmv', dead: true, isSameEntry: () => new Promise<boolean>(() => {}) } as unknown as FileSystemFileHandle
 }
 
 function session(h: FileSystemFileHandle | null, name = 'team.tmv'): FileSession {
@@ -118,4 +124,49 @@ test('resolveFileId names the file the lock key is built from, and is null where
   expect(await resolveFileId(session(null, 'x.tmv'))).toBeNull()
   idbMocks.idbGet.mockRejectedValueOnce(new Error('idb unavailable'))
   expect(await resolveFileId(session(handle('disk-2')))).toBeNull()
+})
+
+describe('a stored handle whose isSameEntry never answers', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
+
+  /** The registry as stored: the given handles, oldest last. */
+  function seed(...handles: FileSystemFileHandle[]): void {
+    idbMocks.data.set('fileLockRegistry', handles.map((h, i) => ({ id: `id-${i}`, handle: h })))
+    idbMocks.idbSet.mockClear()
+  }
+  const storedHandles = () => (idbMocks.data.get('fileLockRegistry') as { handle: unknown }[]).map((e) => e.handle)
+
+  test('is dropped within its own deadline, and the file opened still gets an id — instead of holding the registry lock until the open deadline, on every open', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const dead = deadHandle('sample')
+    seed(dead)
+    const locks = serializingLocks()
+    const id = resolveFileId(session(handle('other')), locks)
+    await vi.advanceTimersByTimeAsync(SAME_ENTRY_MS)
+    expect(await id).not.toBeNull()
+    expect(storedHandles()).not.toContain(dead)
+    // The lock was given back: the next open answers at once.
+    expect(await resolveFileId(session(handle('other')), locks)).toBe(await id)
+  })
+
+  test('does not hide the file it sits beside: a match is still found, and keeps its id', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const live = handle('disk-1')
+    seed(deadHandle('sample'), live)
+    const id = resolveFileId(session(handle('disk-1')))
+    await vi.advanceTimersByTimeAsync(SAME_ENTRY_MS)
+    expect(await id).toBe('id-1')
+    expect(storedHandles()).toEqual([live])
+  })
+
+  test('when the opened handle cannot answer even for itself, nothing is decided: no id, the registry untouched', async () => {
+    const stored = handle('disk-1')
+    seed(stored)
+    const id = resolveFileId(session(deadHandle('disk-1')))
+    await vi.advanceTimersByTimeAsync(SAME_ENTRY_MS)
+    expect(await id).toBeNull()
+    expect(storedHandles()).toEqual([stored])
+    expect(idbMocks.idbSet).not.toHaveBeenCalled()
+  })
 })
