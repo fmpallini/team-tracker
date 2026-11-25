@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.9.4] - 2026-11-24
+
+### Fixed
+- Opening a file in the installed app could take 15 seconds or more on every open; it is quick again.
+
 ## [3.9.3] - 2026-11-24
 
 ### Added
