@@ -4,6 +4,12 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.9.5] - 2026-11-26
+
+### Changed
+- Built-in templates leave a blank line under their title (existing files: Restore defaults), and New 1:1 puts a blank line on each side of its divider.
+- Buttons at the top of each module now share one look: solid for the module's main "add" action, outlined for other commands, plain for Expand all.
+
 ## [3.9.4] - 2026-11-24
 
 ### Fixed

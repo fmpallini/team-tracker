@@ -461,7 +461,7 @@ describe('New 1:1', () => {
     clickNew(container)
     expect(member(store).lastOneOnOne).toBe(todayIso())
     vi.advanceTimersByTime(1000)
-    expect(member(store).notes).toContain('- [>] a\n---\n### 1:1')
+    expect(member(store).notes).toContain('- [>] a\n\n---\n\n### 1:1')
     expect(member(store).notes).toContain('**Carried over**\n- [ ] a')
     // The caret lands in the template's first empty bullet, not on a carried item.
     const start = window.getSelection()!.getRangeAt(0).startContainer
@@ -506,7 +506,7 @@ describe('New 1:1', () => {
     render(container, PERSON_LOC, store, pm)
     requestNewOneOnOne(0)
     vi.advanceTimersByTime(1000)
-    expect(member(store).notes).toContain('- [>] a\n---\n### 1:1')
+    expect(member(store).notes).toContain('- [>] a\n\n---\n\n### 1:1')
     expect(member(store).lastOneOnOne).toBe(todayIso())
 
     container.dispatchEvent(new CustomEvent(NEW_ONE_ON_ONE_EVENT))
@@ -531,7 +531,7 @@ describe('New 1:1', () => {
     clickNew(container)
     vi.advanceTimersByTime(1000)
     const notes = member(store).notes
-    expect(notes).toMatch(/^- \[>\] a\n---\n### 1:1 — [^\n]+\n\*\*Carried over\*\*\n- \[ \] a$/)
+    expect(notes).toMatch(/^- \[>\] a\n\n---\n\n### 1:1 — [^\n]+\n\n\*\*Carried over\*\*\n- \[ \] a$/)
     expect(notes).not.toContain('How are they')
   })
 
@@ -566,7 +566,7 @@ describe('New 1:1', () => {
     clickNew(container)
     vi.advanceTimersByTime(1000)
     const notes = member(store).notes
-    expect(notes).toMatch(/^- \[>\] a\r?\n---\r?\n### 1:1 — [^\r\n]+\r?\n\*\*Carried over\*\*\r?\n- \[ \] a$/)
+    expect(notes).toMatch(/^- \[>\] a\r?\n\r?\n---\r?\n\r?\n### 1:1 — [^\r\n]+\r?\n\r?\n\*\*Carried over\*\*\r?\n- \[ \] a$/)
     expect(notes).not.toContain('How are they')
   })
 

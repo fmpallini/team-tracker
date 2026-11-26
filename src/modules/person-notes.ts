@@ -97,7 +97,7 @@ export const renderPersonNotes = withDisposal((container: HTMLElement, loc: Loc,
   // A labelled button, like "+ Person": the 1:1 is this page's main action.
   const oneOnOneBtn = el(
     'button',
-    { class: 'tt-btn tt-person-header-one-on-one-btn', type: 'button', title: t(lc, 'person_new_one_on_one_title'), onclick: () => newOneOnOne() },
+    { class: 'tt-btn tt-btn-primary tt-action tt-person-header-one-on-one-btn', type: 'button', title: t(lc, 'person_new_one_on_one_title'), onclick: () => newOneOnOne() },
     t(lc, 'person_new_one_on_one_btn')
   )
 

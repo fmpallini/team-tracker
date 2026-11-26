@@ -595,12 +595,12 @@ export const renderMilestones = withDisposal((container: HTMLElement, loc: Loc, 
 
   const addBtn = el(
     'button',
-    { class: 'tt-btn tt-milestone-add-btn', type: 'button', onclick: () => addMilestone() },
+    { class: 'tt-btn tt-btn-primary tt-action tt-milestone-add-btn', type: 'button', onclick: () => addMilestone() },
     t(lc, 'milestone_add_btn')
   )
   const expandAllBtn = el(
     'button',
-    { class: 'tt-btn tt-milestone-expand-all-btn', type: 'button', onclick: () => setAllExpanded(!expandable.isAllExpanded(milestones().map((m) => m.id))) },
+    { class: 'tt-btn tt-btn-quiet tt-action tt-milestone-expand-all-btn', type: 'button', onclick: () => setAllExpanded(!expandable.isAllExpanded(milestones().map((m) => m.id))) },
     ''
   )
 

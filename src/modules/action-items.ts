@@ -1552,12 +1552,12 @@ export const renderActionItems = withDisposal((container: HTMLElement, loc: Loc,
   // column-sized slice of board width just to hold one button.
   const addColumnBtn = el(
     'button',
-    { class: 'tt-btn tt-kanban-add-column-btn', type: 'button', title: t(lc, 'kanban_add_column'), onclick: () => addColumn() },
-    t(lc, 'kanban_add_column')
+    { class: 'tt-btn tt-btn-secondary tt-action tt-kanban-add-column-btn', type: 'button', onclick: () => addColumn() },
+    icon('plus', 13), t(lc, 'kanban_add_column')
   )
   const editTagsBtn = el(
     'button',
-    { class: 'tt-btn tt-kanban-edit-tags-btn', type: 'button', onclick: () => openEditTagsModal() },
+    { class: 'tt-btn tt-btn-secondary tt-action tt-kanban-edit-tags-btn', type: 'button', onclick: () => openEditTagsModal() },
     icon('edit', 13), t(lc, 'kanban_edit_tags_btn')
   )
   const toolbarEl = el('div', { class: 'tt-kanban-toolbar' }, filterLabelEl, tagChipsEl, addColumnBtn, editTagsBtn)

@@ -79,7 +79,7 @@ test('the 1:1 seed name is exported', () => {
 
 test('new 1:1 seed (en-US) is the spec body', () => {
   expect(builtinTemplates('en-US').find(t => t.name === '1:1')!.body).toBe(
-    '### 1:1 — {date}\n**Carried over**\n{carryover}\n**How are they / energy**\n- \n**Their topics**\n- \n**My topics**\n- \n**Feedback (given / received)**\n- \n**Agreed actions**\n- [ ] ')
+    '### 1:1 — {date}\n\n**Carried over**\n{carryover}\n**How are they / energy**\n- \n**Their topics**\n- \n**My topics**\n- \n**Feedback (given / received)**\n- \n**Agreed actions**\n- [ ] ')
 })
 
 test('pt-BR seed labels the carried section "Pendências anteriores"', () => {
@@ -118,13 +118,24 @@ test('empty {carryover} inline stays empty text, nothing removed', () => {
 
 test('the rendered 1:1 seed with no carry-over drops the Carried over section', () => {
   const body = builtinTemplates('en-US').find(t => t.name === '1:1')!.body
-  expect(resolveTemplate(body, ctx)).toBe('### 1:1 — Thu, 07/02/2026\n**How are they / energy**\n- \n**Their topics**\n- \n**My topics**\n- \n**Feedback (given / received)**\n- \n**Agreed actions**\n- [ ] ')
+  expect(resolveTemplate(body, ctx)).toBe('### 1:1 — Thu, 07/02/2026\n\n**How are they / energy**\n- \n**Their topics**\n- \n**My topics**\n- \n**Feedback (given / received)**\n- \n**Agreed actions**\n- [ ] ')
 })
 
 test('reseed recognizes the legacy 1:1 body', () => {
   const tpl = { id: 'a', name: '1:1', scope: 'personal' as const, body: LEGACY_EN }
   const [out] = reseedBuiltinTemplates([tpl], 'en-US', 'pt-BR')
   expect(out!.body).toBe(builtinTemplates('pt-BR').find(t => t.name === '1:1')!.body)
+})
+
+test('every seed body sets its title off with a blank line', () => {
+  for (const locale of ['pt-BR', 'en-US'] as const) {
+    for (const tpl of builtinTemplates(locale)) expect(tpl.body.split('\n')[1], tpl.name).toBe('')
+  }
+})
+
+test('reseed recognizes every seed as it shipped before the blank line under its title', () => {
+  const before = builtinTemplates('en-US').map((tpl) => ({ ...tpl, body: tpl.body.replace('\n\n', '\n') }))
+  expect(reseedBuiltinTemplates(before, 'en-US', 'pt-BR').map((tpl) => tpl.body)).toEqual(builtinTemplates('pt-BR').map((tpl) => tpl.body))
 })
 
 test('upgradeLegacySeedBodies upgrades only exact legacy bodies', () => {

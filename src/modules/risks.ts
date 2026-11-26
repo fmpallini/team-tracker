@@ -1176,13 +1176,13 @@ export const renderRisks = withDisposal((container: HTMLElement, loc: Loc, ctx: 
 
   const addBtn = el(
     'button',
-    { class: 'tt-btn tt-risk-add-btn', type: 'button', onclick: () => addRisk() },
+    { class: 'tt-btn tt-btn-primary tt-action tt-risk-add-btn', type: 'button', onclick: () => addRisk() },
     t(lc, 'risk_add_btn')
   )
   const expandAllBtn = el(
     'button',
     {
-      class: 'tt-btn tt-risk-expand-all-btn',
+      class: 'tt-btn tt-btn-quiet tt-action tt-risk-expand-all-btn',
       type: 'button',
       onclick: () => setAllExpanded(!expandable.isAllExpanded(risks().filter((r) => !r.closed).map((r) => r.id))),
     },
