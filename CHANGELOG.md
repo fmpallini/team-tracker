@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.9.6] - 2026-11-26
+
+### Added
+- A "Diagnostic log" link on the start screen saves a text file of the app's recent steps and errors (never your notes) to send when something goes wrong.
+
+### Changed
+- Ctrl+mouse wheel on the start screen changes the app's text size instead of zooming the browser, so an open file no longer starts out zoomed.
+
 ## [3.9.5] - 2026-11-26
 
 ### Changed
