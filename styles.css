@@ -510,9 +510,6 @@ body { background: var(--bg); color: var(--fg); }
   .tt-calendar-nav-btn, .tt-prefs-template-up-btn, .tt-prefs-template-down-btn, .tt-prefs-template-edit-btn, .tt-prefs-template-dup-btn) {
   height: var(--ctl-h-sm); min-width: var(--ctl-h-sm); padding: 0;
 }
-/* Text action buttons in the panes: accent-tinted like the modal's secondary buttons. (The kanban "add card" keeps its dashed muted look.) */
-:where(.tt-kanban-add-column-btn, .tt-kanban-edit-tags-btn, .tt-daily-calendar-today-btn):not(:disabled) { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); color: var(--accent); }
-:where(.tt-kanban-add-column-btn, .tt-kanban-edit-tags-btn, .tt-daily-calendar-today-btn):not(:disabled):hover { background: var(--hover); }
 .tt-icon-svg { display: block; flex: none; }
 .tt-icon-svg .f { fill: currentColor; stroke: none; }
 /* Header buttons: true squares at the shared control height (the pills above use the same token). */
@@ -621,6 +618,22 @@ body { background: var(--bg); color: var(--fg); }
 .tt-btn-left { margin-right: auto; }
 .tt-btn-danger { border-color: var(--danger); color: var(--danger-text); background: transparent; }
 .tt-btn-danger:hover { opacity: .8; }
+/* A module's labelled actions (a pane toolbar, the person header, the calendar's Today, an empty pane's add) are
+   .tt-action and take one role: .tt-btn-primary, the module's one main create action ("+ Risk"), at most one per
+   toolbar; .tt-btn-secondary, any other command, an accent outline led by an icon; .tt-btn-quiet, a change to the
+   view only (Expand all), borderless until hovered. A dialog's non-primary buttons wear the secondary look too.
+   (The Tasks columns' dashed "+ Task" is a column action, not a toolbar one.) */
+.tt-action { font-size: .9rem; padding: .3rem .7rem; }
+.tt-action.tt-btn-primary { font-weight: 600; }
+/* In a pane's bar or toolbar the tier-2 rule sets the height; side padding only, so the label centres. */
+:is(.tt-pane-bar, .tt-person-header, .tt-editor-toolbar, .tt-people-toolbar, .tt-kanban-toolbar, .tt-milestone-toolbar, .tt-risk-toolbar) .tt-action { padding-block: 0; }
+/* :where() keeps the secondary role under .tt-btn:hover, so hovering still turns its border full accent. */
+:where(.tt-btn-secondary):not(:disabled),
+.tt-modal-buttons .tt-btn:not(.tt-btn-primary):not(.tt-btn-danger) { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); color: var(--accent); }
+:where(.tt-btn-secondary):not(:disabled):hover,
+.tt-modal-buttons .tt-btn:not(.tt-btn-primary):not(.tt-btn-danger):hover { background: var(--hover); }
+.tt-btn-quiet { border-color: transparent; background: transparent; color: var(--muted); }
+.tt-btn-quiet:hover:not(:disabled) { border-color: transparent; background: var(--hover); color: var(--accent); }
 
 /* Icon color carries meaning, nothing else is colored: red = destroys, green = confirms/restores, gold = state you set (favorite, lock), accent = changes content, slate = settings/help/dates. Every other icon keeps the button's own (neutral) text color. The icon() span carries tt-icon-<name>; colors follow the active palette and are skipped on hover/disabled so the button's own hover (accent) and disabled states still win. */
 .tt-btn:not(:hover):not(:disabled) .tt-icon-trash,
@@ -642,8 +655,6 @@ body { background: var(--bg); color: var(--fg); }
 .tt-btn.tt-btn-primary:not(:hover):not(:disabled) .tt-icon { color: var(--on-accent); }
 /* Modal buttons: icon + label, tinted secondary, glowing primary, soft-filled danger. */
 .tt-modal-buttons .tt-btn { display: inline-flex; align-items: center; gap: .35rem; }
-.tt-modal-buttons .tt-btn:not(.tt-btn-primary):not(.tt-btn-danger) { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); color: var(--accent); }
-.tt-modal-buttons .tt-btn:not(.tt-btn-primary):not(.tt-btn-danger):hover { background: var(--hover); }
 .tt-modal-buttons .tt-btn-primary { box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 40%, transparent); }
 .tt-modal-buttons .tt-btn-danger { background: color-mix(in srgb, var(--danger) 12%, transparent); }
 .tt-modal-buttons .tt-btn-danger:hover { background: var(--danger); color: var(--on-danger); opacity: 1; }
@@ -1353,7 +1364,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-daily-badge-slot { margin: 0 .4rem .4rem; }
 .tt-daily-calendar-slot { padding: 0 .5rem .5rem; }
 .tt-daily-calendar-actions { display: flex; padding: 0 .1rem; margin-top: .5rem; }
-.tt-daily-calendar-today-btn { flex: 1; font-size: .9rem; font-weight: 600; padding: .35rem .4rem; }
+.tt-daily-calendar-today-btn { flex: 1; }
 .tt-daily-editor-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .tt-daily-editor-col .tt-editor { flex: 1; }
 
@@ -2489,13 +2500,6 @@ select option { background: var(--bg); color: var(--fg); }
 /* The follow-up editor opens under its row; the wider gap between rows must not pull it away from the row it belongs to. */
 .tt-risk-row + .tt-risk-followup-row, .tt-milestone-row + .tt-milestone-followup-row { margin-top: -.35rem; }
 
-/* Add buttons (people, milestones, risks, and the one an empty pane offers) are the one filled button of their toolbar; expand-all is quiet and only shows a wash on hover. */
-.tt-people-add-btn, .tt-milestone-add-btn, .tt-risk-add-btn, .tt-person-header-one-on-one-btn, .tt-empty-state-action { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; font-size: .9rem; padding: .3rem .7rem; }
-/* In a toolbar (or the person header) the tier-2 rule sets the height; side padding only, so the label centres. */
-:is(.tt-people-toolbar, .tt-milestone-toolbar, .tt-risk-toolbar, .tt-person-header) :is(.tt-people-add-btn, .tt-milestone-add-btn, .tt-risk-add-btn, .tt-person-header-one-on-one-btn, .tt-milestone-expand-all-btn, .tt-risk-expand-all-btn) { padding-block: 0; }
-.tt-people-add-btn:hover:not(:disabled), .tt-milestone-add-btn:hover:not(:disabled), .tt-risk-add-btn:hover:not(:disabled), .tt-person-header-one-on-one-btn:hover:not(:disabled), .tt-empty-state-action:hover:not(:disabled) { color: var(--on-accent); opacity: .9; }
-.tt-milestone-expand-all-btn, .tt-risk-expand-all-btn { border-color: transparent; background: transparent; color: var(--muted); font-size: .9rem; padding: .3rem .55rem; }
-.tt-milestone-expand-all-btn:hover:not(:disabled), .tt-risk-expand-all-btn:hover:not(:disabled) { border-color: transparent; background: var(--hover); color: var(--accent); }
 
 /* A pane with nothing in it offers its add action once, in the empty state. Its toolbar (add, progress, expand all) has nothing to act on, and the To Do column's own + Card would be a second add button next to the board's. */
 .tt-people:has(.tt-people-empty) > .tt-people-toolbar,

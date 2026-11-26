@@ -530,7 +530,7 @@ export function renderPeopleTree(group: 'stakeholders' | 'members'): ModuleRende
 
     const addRootBtn = el(
       'button',
-      { class: 'tt-btn tt-people-add-btn', type: 'button', onclick: () => openAddModal(null) },
+      { class: 'tt-btn tt-btn-primary tt-action tt-people-add-btn', type: 'button', onclick: () => openAddModal(null) },
       t(lc, 'person_add_btn')
     )
     const toolbar = el('div', { class: 'tt-people-toolbar' }, addRootBtn)

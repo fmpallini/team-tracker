@@ -46,23 +46,24 @@ const ONE_ON_ONE_BEFORE_CARRYOVER: Localized = {
 
 // Light structure: one small title heading, then bold labels — alone on their line over a bullet list, or inline
 // with the text following on the same line. Follow-ups are `- [ ]` checkboxes: open ones in a person's notes are
-// what New 1:1 carries forward, so an agreed item written here reaches the next 1:1 on its own.
+// what New 1:1 carries forward, so an agreed item written here reaches the next 1:1 on its own. A blank line sets the
+// title off from the body (`withoutTitleGap` recognizes each seed's body from before that).
 // Documents seeded before this keep their headed bodies: built-ins already in a file are never rewritten.
 const SEEDS: TemplateSeed[] = [
   {
     name: { 'pt-BR': 'Primeiro 1:1', 'en-US': 'First 1:1' },
     scope: 'personal',
     body: {
-      'pt-BR': '### Primeiro 1:1 — {date}\n**Como gosta de trabalhar / se comunicar**\n- \n**O que motiva**\n- \n**Objetivos de carreira**\n- \n**O que precisa de mim**\n- \n**Algo que eu deva saber**\n- \n**Ações combinadas**\n- [ ] ',
-      'en-US': '### First 1:1 — {date}\n**How they like to work / communicate**\n- \n**What motivates them**\n- \n**Career goals**\n- \n**What they need from me**\n- \n**Anything I should know**\n- \n**Agreed actions**\n- [ ] ',
+      'pt-BR': '### Primeiro 1:1 — {date}\n\n**Como gosta de trabalhar / se comunicar**\n- \n**O que motiva**\n- \n**Objetivos de carreira**\n- \n**O que precisa de mim**\n- \n**Algo que eu deva saber**\n- \n**Ações combinadas**\n- [ ] ',
+      'en-US': '### First 1:1 — {date}\n\n**How they like to work / communicate**\n- \n**What motivates them**\n- \n**Career goals**\n- \n**What they need from me**\n- \n**Anything I should know**\n- \n**Agreed actions**\n- [ ] ',
     },
   },
   {
     name: { 'pt-BR': ONE_ON_ONE_SEED_NAME, 'en-US': ONE_ON_ONE_SEED_NAME },
     scope: 'personal',
     body: {
-      'pt-BR': '### 1:1 — {date}\n**Pendências anteriores**\n{carryover}\n**Como está / energia**\n- \n**Tópicos dela(e)**\n- \n**Meus tópicos**\n- \n**Feedback (dado / recebido)**\n- \n**Ações combinadas**\n- [ ] ',
-      'en-US': '### 1:1 — {date}\n**Carried over**\n{carryover}\n**How are they / energy**\n- \n**Their topics**\n- \n**My topics**\n- \n**Feedback (given / received)**\n- \n**Agreed actions**\n- [ ] ',
+      'pt-BR': '### 1:1 — {date}\n\n**Pendências anteriores**\n{carryover}\n**Como está / energia**\n- \n**Tópicos dela(e)**\n- \n**Meus tópicos**\n- \n**Feedback (dado / recebido)**\n- \n**Ações combinadas**\n- [ ] ',
+      'en-US': '### 1:1 — {date}\n\n**Carried over**\n{carryover}\n**How are they / energy**\n- \n**Their topics**\n- \n**My topics**\n- \n**Feedback (given / received)**\n- \n**Agreed actions**\n- [ ] ',
     },
     previousBodies: [
       ONE_ON_ONE_BEFORE_CARRYOVER,
@@ -76,8 +77,8 @@ const SEEDS: TemplateSeed[] = [
     name: { 'pt-BR': 'Feedback (SBI)', 'en-US': 'Feedback (SBI)' },
     scope: 'personal',
     body: {
-      'pt-BR': '### Feedback — {date}\n**Situação:** \n**Comportamento:** \n**Impacto:** \n**Combinado**\n- [ ] ',
-      'en-US': '### Feedback — {date}\n**Situation:** \n**Behavior:** \n**Impact:** \n**Agreed**\n- [ ] ',
+      'pt-BR': '### Feedback — {date}\n\n**Situação:** \n**Comportamento:** \n**Impacto:** \n**Combinado**\n- [ ] ',
+      'en-US': '### Feedback — {date}\n\n**Situation:** \n**Behavior:** \n**Impact:** \n**Agreed**\n- [ ] ',
     },
     previousBodies: [{
       'pt-BR': '## Feedback — {date}\n**Situação:** \n**Comportamento:** \n**Impacto:** \n**Combinado:** ',
@@ -88,16 +89,16 @@ const SEEDS: TemplateSeed[] = [
     name: { 'pt-BR': 'Conversa de carreira', 'en-US': 'Career conversation' },
     scope: 'personal',
     body: {
-      'pt-BR': '### Conversa de carreira — {date}\n**Onde quer estar em 1–2 anos**\n- \n**Pontos fortes**\n- \n**Pontos a desenvolver**\n- \n**Oportunidades**\n- \n**Próximos passos**\n- [ ] ',
-      'en-US': '### Career conversation — {date}\n**Where they want to be in 1–2 years**\n- \n**Strengths**\n- \n**Growth areas**\n- \n**Opportunities**\n- \n**Next steps**\n- [ ] ',
+      'pt-BR': '### Conversa de carreira — {date}\n\n**Onde quer estar em 1–2 anos**\n- \n**Pontos fortes**\n- \n**Pontos a desenvolver**\n- \n**Oportunidades**\n- \n**Próximos passos**\n- [ ] ',
+      'en-US': '### Career conversation — {date}\n\n**Where they want to be in 1–2 years**\n- \n**Strengths**\n- \n**Growth areas**\n- \n**Opportunities**\n- \n**Next steps**\n- [ ] ',
     },
   },
   {
     name: { 'pt-BR': 'Reunião', 'en-US': 'Meeting' },
     scope: 'any',
     body: {
-      'pt-BR': '### Reunião — {time}\n**Participantes:** \n**Pauta**\n- \n**Decisões**\n- \n**Ações (quem → o quê → quando)**\n- [ ] ',
-      'en-US': '### Meeting — {time}\n**Attendees:** \n**Agenda**\n- \n**Decisions**\n- \n**Actions (who → what → when)**\n- [ ] ',
+      'pt-BR': '### Reunião — {time}\n\n**Participantes:** \n**Pauta**\n- \n**Decisões**\n- \n**Ações (quem → o quê → quando)**\n- [ ] ',
+      'en-US': '### Meeting — {time}\n\n**Attendees:** \n**Agenda**\n- \n**Decisions**\n- \n**Actions (who → what → when)**\n- [ ] ',
     },
     previousBodies: [{
       'pt-BR': '## Reunião — {time}\n**Participantes:** \n### Pauta\n- \n### Decisões\n- \n### Ações (quem → o quê → quando)\n- ',
@@ -108,8 +109,8 @@ const SEEDS: TemplateSeed[] = [
     name: { 'pt-BR': 'Status semanal', 'en-US': 'Weekly status' },
     scope: 'any',
     body: {
-      'pt-BR': '### Status semanal — {date}\n**Highlights**\n- \n**Lowlights**\n- \n**Milestones**\n- \n**Riscos novos**\n- \n**Próxima semana**\n- ',
-      'en-US': '### Weekly status — {date}\n**Highlights**\n- \n**Lowlights**\n- \n**Milestones**\n- \n**New risks**\n- \n**Next week**\n- ',
+      'pt-BR': '### Status semanal — {date}\n\n**Highlights**\n- \n**Lowlights**\n- \n**Milestones**\n- \n**Riscos novos**\n- \n**Próxima semana**\n- ',
+      'en-US': '### Weekly status — {date}\n\n**Highlights**\n- \n**Lowlights**\n- \n**Milestones**\n- \n**New risks**\n- \n**Next week**\n- ',
     },
     previousBodies: [{
       'pt-BR': '## Status semanal — {date}\n### Highlights\n- \n### Lowlights\n- \n### Riscos novos\n- \n### Próxima semana\n- ',
@@ -120,8 +121,8 @@ const SEEDS: TemplateSeed[] = [
     name: { 'pt-BR': 'Decisão', 'en-US': 'Decision' },
     scope: 'any',
     body: {
-      'pt-BR': '### Decisão — {date}\n**Contexto:** \n**Opções consideradas:** \n**Decisão:** \n**Decidido por:** \n**Revisar em:** \n**Consequências / follow-up**\n- [ ] ',
-      'en-US': '### Decision — {date}\n**Context:** \n**Options considered:** \n**Decision:** \n**Decided by:** \n**Revisit on:** \n**Consequences / follow-up**\n- [ ] ',
+      'pt-BR': '### Decisão — {date}\n\n**Contexto:** \n**Opções consideradas:** \n**Decisão:** \n**Decidido por:** \n**Revisar em:** \n**Consequências / follow-up**\n- [ ] ',
+      'en-US': '### Decision — {date}\n\n**Context:** \n**Options considered:** \n**Decision:** \n**Decided by:** \n**Revisit on:** \n**Consequences / follow-up**\n- [ ] ',
     },
     previousBodies: [{
       'pt-BR': '## Decisão — {date}\n**Contexto:** \n**Opções consideradas:** \n**Decisão:** \n**Consequências / follow-up:** ',
@@ -132,8 +133,8 @@ const SEEDS: TemplateSeed[] = [
     name: { 'pt-BR': 'Retro / Incidente', 'en-US': 'Retro / Incident' },
     scope: 'any',
     body: {
-      'pt-BR': '### Retro — {date}\n**O que aconteceu / linha do tempo**\n- \n**Impacto**\n- \n**O que foi bem**\n- \n**O que melhorar**\n- \n**Ações**\n- [ ] ',
-      'en-US': '### Retro — {date}\n**What happened / timeline**\n- \n**Impact**\n- \n**What went well**\n- \n**What to improve**\n- \n**Actions**\n- [ ] ',
+      'pt-BR': '### Retro — {date}\n\n**O que aconteceu / linha do tempo**\n- \n**Impacto**\n- \n**O que foi bem**\n- \n**O que melhorar**\n- \n**Ações**\n- [ ] ',
+      'en-US': '### Retro — {date}\n\n**What happened / timeline**\n- \n**Impact**\n- \n**What went well**\n- \n**What to improve**\n- \n**Actions**\n- [ ] ',
     },
   },
 ]
@@ -147,10 +148,16 @@ export function builtinTemplates(locale: Locale): Template[] {
   }))
 }
 
+/** A seed body as it shipped before the blank line under its title (3.9.4 and earlier): the same text with that line gone. */
+function withoutTitleGap(body: string): string {
+  return body.replace('\n\n', '\n')
+}
+
 export function reseedBuiltinTemplates(templates: Template[], oldLocale: Locale, newLocale: Locale): Template[] {
   return templates.map((tpl) => {
     const seed = SEEDS.find((s) => s.name[oldLocale] === tpl.name
-      && (s.body[oldLocale] === tpl.body || !!s.previousBodies?.some((b) => b[oldLocale] === tpl.body)))
+      && (s.body[oldLocale] === tpl.body || withoutTitleGap(s.body[oldLocale]) === tpl.body
+        || !!s.previousBodies?.some((b) => b[oldLocale] === tpl.body)))
     if (!seed) return tpl
     return { ...tpl, name: seed.name[newLocale], body: seed.body[newLocale] }
   })

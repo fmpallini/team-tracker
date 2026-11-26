@@ -27,6 +27,7 @@ The app's screens agree on a small set of rules. Reuse the helper or token inste
 - **Spacing.** `--sp-1..4`; list items `--row-pad`, card rows `--card-row-pad`; panes pad `--sp-2` with no divider under the toolbar.
 - **Control sizes.** Three height tiers: `--ctl-h-lg` (app header), `--ctl-h` (a pane's bars and toolbars: pane bar, person header, editor and module toolbars), `--ctl-h-sm` (actions inside a row, card or list; 24px, the WCAG 2.2 minimum target). Icon-only buttons are squares: `iconButton()` adds `.tt-btn-icon` (tier 2 by default); a row action joins the tier-3 list beside it in styles.css. No one-off heights or paddings that move a button between tiers.
 - **Radii.** `--r-sm/md/lg`, pills (999px), circles (50%), or a hairline of 3px or less. **Colors.** Tokens only; literals live in the palette blocks.
+- **Module actions** (labelled buttons in a pane toolbar, the person header, the calendar's Today, an empty pane's add) are `.tt-action` plus exactly one role: `.tt-btn-primary` (solid; the module's one main create action, "+ Risk", at most one per toolbar), `.tt-btn-secondary` (accent outline led by an icon; any other command) or `.tt-btn-quiet` (borderless until hover; changes only the view, like Expand all). Tasks has no primary: tasks are added from each column's dashed "+ Task", a column action.
 - **Row actions** rest faint (`opacity: .38`) and reach full strength on row hover or focus; decorative extras may stay hidden.
 
 ## Before you finish

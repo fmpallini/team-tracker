@@ -1750,7 +1750,7 @@ describe('renderActionItems — custom columns: add + rename', () => {
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
 
-    clickByTitleOrText(container, '+ Column')
+    clickByTitleOrText(container, 'Column')
 
     expect(store.doc.teams[0]!.actionColumns).toHaveLength(2)
     const added = store.doc.teams[0]!.actionColumns![1]!
@@ -1767,7 +1767,7 @@ describe('renderActionItems — custom columns: add + rename', () => {
     const team = makeTeam()
     const { container, store, pm, loc } = setup(team)
     render(container, loc, store, pm)
-    clickByTitleOrText(container, '+ Column')
+    clickByTitleOrText(container, 'Column')
 
     // Middle-column headers carry a live "(n)" item count (see
     // middleNameSpans in action-items.ts) alongside the name — asserting the

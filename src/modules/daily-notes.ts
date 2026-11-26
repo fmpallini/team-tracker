@@ -178,7 +178,7 @@ export const renderDailyNotes = withDisposal((container: HTMLElement, loc: Loc, 
         el(
           'button',
           {
-            class: 'tt-btn tt-daily-calendar-today-btn',
+            class: 'tt-btn tt-btn-secondary tt-action tt-daily-calendar-today-btn',
             type: 'button',
             onclick: () => ctx.pm.openInPane(ctx.paneIdx, { teamId, ref: { kind: 'daily', date: todayIso() } }),
           },

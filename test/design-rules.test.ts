@@ -186,6 +186,35 @@ describe('source: dialogs, deletes and icon buttons', () => {
     expect(bad).toEqual([])
   })
 
+  test('a module action is .tt-action with exactly one role: primary, secondary or quiet', () => {
+    const ROLES = ['tt-btn-primary', 'tt-btn-secondary', 'tt-btn-quiet']
+    const bad: string[] = []
+    for (const { path, text } of sources) {
+      for (const m of text.matchAll(/class:\s*'([^']*\btt-action\b[^']*)'/g)) {
+        const classes = m[1]!.split(/\s+/)
+        if (ROLES.filter((r) => classes.includes(r)).length !== 1) bad.push(`${path}:${text.slice(0, m.index).split('\n').length}`)
+      }
+    }
+    expect(bad).toEqual([])
+  })
+
+  test('a labelled button in a module is a .tt-action', () => {
+    // The Tasks columns' "+ Task" (and its invisible spacer twin) is a column action, row tier, dashed: not a toolbar one.
+    const ALLOWED = /\btt-kanban-add-btn\b/
+    const labelled = /el\(\s*'button',\s*\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}\s*,\s*(?:icon\([^()]*\)\s*,\s*)?t\(/g
+    const bad: string[] = []
+    let seen = 0
+    for (const { path, text } of sources) {
+      if (!path.startsWith('src/modules/')) continue
+      for (const m of text.matchAll(labelled)) {
+        seen++
+        if (!/\btt-action\b/.test(m[1]!) && !ALLOWED.test(m[1]!)) bad.push(`${path}:${text.slice(0, m.index).split('\n').length}`)
+      }
+    }
+    expect(seen).toBeGreaterThan(5) // the pattern still finds the module buttons
+    expect(bad).toEqual([])
+  })
+
   test('an icon-only button carries its accessible name: it goes through iconButton() or sets aria-label', () => {
     const iconOnly = /el\(\s*'button',\s*\{((?:[^{}]|\{[^{}]*\})*)\}\s*,\s*icon\(([^()]*)\)\s*\)/g
     const bad: string[] = []

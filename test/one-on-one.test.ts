@@ -20,7 +20,7 @@ test('a whitespace-only note counts as empty', () => {
 test('carries open items with subtree, marks originals, skips done and blank', () => {
   const note = '## 1:1\n- [ ] a\n  - detail\n- [x] b\n- [ ] \n- [>] old'
   const r = buildOneOnOne(note, SEED_EN, ctx)
-  expect(r.md).toContain('- [>] a\n  - detail\n- [x] b\n- [ ] \n- [>] old\n---\n### 1:1')
+  expect(r.md).toContain('- [>] a\n  - detail\n- [x] b\n- [ ] \n- [>] old\n\n---\n\n### 1:1')
   expect(r.md).toContain('**Carried over**\n- [ ] a\n  - detail\n**How are they')
   expect(r.blockHrFromEnd).toBe(0)
 })
@@ -31,46 +31,55 @@ test('nested open task under a non-task bullet is lifted to top level', () => {
 
 test('marks nested open tasks carried too', () => {
   const r = buildOneOnOne('- [ ] a\n  - [ ] b', SEED_EN, ctx)
-  expect(r.md.split('---')[0]).toBe('- [>] a\n  - [>] b\n')
+  expect(r.md.split('\n\n---\n\n')[0]).toBe('- [>] a\n  - [>] b')
   expect(r.md).toContain('**Carried over**\n- [ ] a\n  - [ ] b\n')          // b travels once, inside a
   expect(buildOneOnOne(r.md, SEED_EN, ctx).md.match(/- \[ \] b/g)!.length).toBe(1) // second 1:1: b is open only in its newest copy
 })
 
 test('the subtree keeps done, carried and ordered children as they are', () => {
   const r = buildOneOnOne('- [ ] a\n  - [x] done\n  - [>] old\n  1. [ ] step\n    - deep\n- next', SEED_EN, ctx)
-  expect(r.md.split('\n---\n')[0]).toBe('- [>] a\n  - [x] done\n  - [>] old\n  1. [ ] step\n    - deep\n- next')
+  expect(r.md.split('\n\n---\n\n')[0]).toBe('- [>] a\n  - [x] done\n  - [>] old\n  1. [ ] step\n    - deep\n- next')
   expect(r.md).toContain('**Carried over**\n- [ ] a\n  - [x] done\n  - [>] old\n  1. [ ] step\n    - deep\n**How')
 })
 
 test('the subtree ends at the first line that is not a deeper list item', () => {
   const r = buildOneOnOne('- [ ] a\ntext\n  - [ ] c\n- [ ] d\n  - e', SEED_EN, ctx)
-  expect(r.md.split('\n---\n')[0]).toBe('- [>] a\ntext\n  - [>] c\n- [>] d\n  - e')
+  expect(r.md.split('\n\n---\n\n')[0]).toBe('- [>] a\ntext\n  - [>] c\n- [>] d\n  - e')
   expect(r.md).toContain('**Carried over**\n- [ ] a\n- [ ] c\n- [ ] d\n  - e\n**How')
 })
 
 test('fenced and ordered task text is ignored', () => {
   const note = '```\n- [ ] fenced\n```\n1. [ ] ordered\n````\n- [ ] long\n```\n````\n- [ ] real'
   const r = buildOneOnOne(note, SEED_EN, ctx)
-  expect(r.md.split('\n---\n')[0]).toBe(note.replace('- [ ] real', '- [>] real'))
+  expect(r.md.split('\n\n---\n\n')[0]).toBe(note.replace('- [ ] real', '- [>] real'))
   expect(r.md).toContain('**Carried over**\n- [ ] real\n**How')
 })
 
 test('a fence left open at the end of the note is closed before the rule', () => {
   const r = buildOneOnOne('- [ ] a\n```\ncode', SEED_EN, ctx)
-  expect(r.md).toContain('- [>] a\n```\ncode\n```\n---\n### 1:1')
+  expect(r.md).toContain('- [>] a\n```\ncode\n```\n\n---\n\n### 1:1')
   expect(r.blockHrFromEnd).toBe(0)
 })
 
 test('template without {carryover} still carries after the first line', () => {
-  expect(buildOneOnOne('- [ ] a', '## Mine\n- x', ctx).md).toContain('---\n## Mine\n**Carried over**\n- [ ] a\n- x')
+  expect(buildOneOnOne('- [ ] a', '## Mine\n- x', ctx).md).toContain('---\n\n## Mine\n**Carried over**\n- [ ] a\n- x')
 })
 
 test('template without {carryover} and nothing to carry is used as is', () => {
-  expect(buildOneOnOne('- [x] a', '## Mine\n- x', ctx).md).toBe('- [x] a\n---\n## Mine\n- x')
+  expect(buildOneOnOne('- [x] a', '## Mine\n- x', ctx).md).toBe('- [x] a\n\n---\n\n## Mine\n- x')
 })
 
 test('missing template falls back to a bare heading plus carried items', () => {
-  expect(buildOneOnOne('- [ ] a', null, ctx).md).toMatch(/---\n### 1:1 — .+\n\*\*Carried over\*\*\n- \[ \] a$/)
+  expect(buildOneOnOne('- [ ] a', null, ctx).md).toMatch(/---\n\n### 1:1 — .+\n\n\*\*Carried over\*\*\n- \[ \] a$/)
+})
+
+test('missing template with nothing to carry is the heading and the blank line under it', () => {
+  expect(buildOneOnOne('- [x] a', null, ctx).md).toMatch(/^- \[x\] a\n\n---\n\n### 1:1 — [^\n]+\n$/)
+})
+
+test('the seed 1:1 sets its title off with a blank line, carried items or not', () => {
+  expect(buildOneOnOne('- [ ] a', SEED_EN, ctx).md).toMatch(/\n### 1:1 — [^\n]+\n\n\*\*Carried over\*\*\n- \[ \] a\n\*\*How/)
+  expect(buildOneOnOne('- [x] a', SEED_EN, ctx).md).toMatch(/\n### 1:1 — [^\n]+\n\n\*\*How are they/)
 })
 
 test('the carried heading is localized and matches the seed heading', () => {
@@ -85,23 +94,23 @@ test('a caller-supplied carryover is replaced by the collected items', () => {
 })
 
 test('blockHrFromEnd counts rules inside the template body', () => {
-  expect(buildOneOnOne('x', '## A\n---\n- ', ctx).blockHrFromEnd).toBe(1)
+  expect(buildOneOnOne('x', '## A\n\n---\n\n- ', ctx).blockHrFromEnd).toBe(1)
 })
 
 test('blockHrFromEnd ignores rule lines inside a fence', () => {
-  expect(buildOneOnOne('x', '## A\n```\n---\n```\n---', ctx).blockHrFromEnd).toBe(1)
+  expect(buildOneOnOne('x', '## A\n```\n\n---\n\n```\n---', ctx).blockHrFromEnd).toBe(1)
 })
 
 test('a blank open task inside a carried subtree travels with it and is marked too', () => {
   const r = buildOneOnOne('- [ ] a\n  - [ ] ', SEED_EN, ctx)
-  expect(r.md.split('\n---\n')[0]).toBe('- [>] a\n  - [>]')
+  expect(r.md.split('\n\n---\n\n')[0]).toBe('- [>] a\n  - [>]')
   expect(r.md).toContain('**Carried over**\n- [ ] a\n  - [ ] \n**How')
 })
 
 test('a deeper task is carried dedented by its own indent, and the rest of the note is untouched', () => {
   const note = 'intro\n\n    - [ ] deep\n      - child\n\n## Later\ntext  '
   const r = buildOneOnOne(note, SEED_EN, ctx)
-  expect(r.md.split('\n---\n')[0]).toBe('intro\n\n    - [>] deep\n      - child\n\n## Later\ntext')
+  expect(r.md.split('\n\n---\n\n')[0]).toBe('intro\n\n    - [>] deep\n      - child\n\n## Later\ntext')
   expect(r.md).toContain('**Carried over**\n- [ ] deep\n  - child\n**How')
 })
 
@@ -110,9 +119,9 @@ describe('the carried item lands exactly once as an open task, whatever the temp
   /** The new block's lines (the note holds no rule, so the block is everything after the first one). */
   function expectCarriedOnce(template: string) {
     const r = buildOneOnOne(NOTE, template, ctx)
-    const [head, ...rest] = r.md.split('\n---\n')
+    const [head, ...rest] = r.md.split('\n\n---\n\n')
     expect(head).toBe('- [>] Ship plan')
-    const block = rest.join('\n---\n').split('\n')
+    const block = rest.join('\n\n---\n\n').split('\n')
     const { fenced } = fencedLines(block)
     expect(block.filter(l => l.includes('Ship plan'))).toEqual(['- [ ] Ship plan'])
     expect(fenced[block.indexOf('- [ ] Ship plan')]).toBe(false)

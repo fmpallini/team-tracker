@@ -9,8 +9,8 @@ export interface OneOnOneResult {
   blockHrFromEnd: number | null
 }
 
-/** The block's body when the 1:1 template is missing. */
-const FALLBACK_BODY = '### 1:1 — {date}'
+/** The block's body when the 1:1 template is missing: the title and the blank line every seed puts under it. */
+const FALLBACK_BODY = '### 1:1 — {date}\n'
 
 const BULLET = /^( *)- (.*)$/
 const LIST_ITEM = /^( *)(- |\d+\. )/
@@ -32,7 +32,7 @@ function openTask(line: string): { indent: number; blank: boolean } | null {
  * block's first unfenced `{carryover}` line (or under their own heading) — and
  * marked `[>]` in place. The block is the resolved
  * template (`body`, or a bare heading when the template is missing), joined to
- * the note after a `---` rule.
+ * the note after a `---` rule with a blank line on each side.
  *
  * A task's subtree is the run of following list lines indented deeper than it.
  * A list item is exactly one line in this dialect (a `<br>` continuation
@@ -88,10 +88,12 @@ export function buildOneOnOne(noteMd: string, body: string | null, ctx: Template
     block = resolveTemplate(kept, { ...ctx, carryover })
     if (slot < 0) {
       // No place for the items in the template (edited away, or the fallback):
-      // they go under their own bold label right after the block's first line —
-      // or before it when that line opens a code fence, where they would be code.
+      // they go under their own bold label right after the block's first line
+      // (and the blank line under it, keeping the title set off) — or before
+      // it when that line opens a code fence, where they would be code.
       const blockLines = block.split('\n')
-      blockLines.splice(fencedLines(blockLines).fenced[0] ? 0 : 1, 0, `**${t(ctx.locale, 'one_on_one_carried_heading')}**`, carryover)
+      const at = fencedLines(blockLines).fenced[0] ? 0 : blockLines[1] === '' ? 2 : 1
+      blockLines.splice(at, 0, `**${t(ctx.locale, 'one_on_one_carried_heading')}**`, carryover)
       block = blockLines.join('\n')
     }
   }
@@ -105,5 +107,6 @@ export function buildOneOnOne(noteMd: string, body: string | null, ctx: Template
   const blockLines = block.split('\n')
   const blockFenced = fencedLines(blockLines).fenced
   const blockHrFromEnd = blockLines.filter((l, i) => !blockFenced[i] && RULE.test(l)).length
-  return { md: `${head}\n---\n${block}`, blockHrFromEnd }
+  // A blank line each side of the rule sets the new 1:1 apart from the notes above it.
+  return { md: `${head}\n\n---\n\n${block}`, blockHrFromEnd }
 }

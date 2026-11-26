@@ -19,7 +19,7 @@ export function emptyState(opts: EmptyStateOptions): HTMLElement {
     el('span', { class: 'tt-empty-state-icon' }, icon(opts.icon, 28)),
     el('p', { class: 'tt-empty-state-text' }, opts.text),
     ...(opts.action
-      ? [el('button', { class: 'tt-btn tt-empty-state-action', type: 'button', onclick: opts.action.onClick }, opts.action.label)]
+      ? [el('button', { class: 'tt-btn tt-btn-primary tt-action tt-empty-state-action', type: 'button', onclick: opts.action.onClick }, opts.action.label)]
       : [])
   )
 }
