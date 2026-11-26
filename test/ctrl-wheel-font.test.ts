@@ -1,4 +1,4 @@
-import { installCtrlWheelFontSize } from '../src/ui/ctrl-wheel-font'
+import { installCtrlWheelFontSize, installStartCtrlWheelSize } from '../src/ui/ctrl-wheel-font'
 import { createStore, type Store } from '../src/core/store'
 import { createEmptyDocument } from '../src/core/document'
 import { t } from '../src/core/i18n'
@@ -74,4 +74,43 @@ test('a read-only tab neither applies nor announces a size it could not save', (
 test('the returned function stops listening', () => {
   dispose()
   expect(wheel(-100).defaultPrevented).toBe(false)
+})
+
+describe('start screen (no document open)', () => {
+  let root: HTMLElement
+  let disposeStart: () => void
+  beforeEach(() => {
+    dispose() // only the start screen's listener here
+    delete document.documentElement.dataset.size
+    root = document.createElement('div')
+    document.body.append(root)
+    disposeStart = installStartCtrlWheelSize(root, 'en-US')
+  })
+  afterEach(() => {
+    disposeStart()
+    delete document.documentElement.dataset.size
+  })
+
+  test('always takes the gesture, stepping <html data-size> from M without a document', () => {
+    const e = wheel(-100)
+    expect(e.defaultPrevented).toBe(true)
+    expect(document.documentElement.dataset.size).toBe('L')
+    expect(toastText()).toBe(t('en-US', 'size_toast', { size: t('en-US', 'prefs_size_l') }))
+  })
+
+  test('steps from the size a closed document left behind', () => {
+    document.documentElement.dataset.size = 'XS'
+    wheel(-100)
+    expect(document.documentElement.dataset.size).toBe('S')
+  })
+
+  test('once the start screen is gone it hands the gesture on and stops listening', () => {
+    root.remove()
+    expect(wheel(-100).defaultPrevented).toBe(false)
+    expect(document.documentElement.dataset.size).toBeUndefined()
+    // A document's listener installed afterwards sees the event on its own.
+    dispose = installCtrlWheelFontSize(store, { applyPrefs })
+    wheel(-100)
+    expect(store.doc.prefs.fontSize).toBe('L')
+  })
 })

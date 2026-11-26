@@ -10,6 +10,7 @@ import { holdDocument, pruneStaleCopies } from './core/browser-copies'
 import { reconcileOpen, type OpenedDocument } from './ui/open-document'
 import { createShell, toggleFullscreen, type Shell } from './ui/shell'
 import { showStartScreen } from './ui/start'
+import { installFlightLog, logEvent } from './core/flight-log'
 import { OPEN_DATA_PREFS_EVENT } from './ui/image-host'
 import { mountSidebar, ADD_TEAM_REQUEST_EVENT } from './ui/sidebar'
 import { resolveAppHotkey, isBrowserSaveChord, isBrowserUndoChord } from './ui/app-hotkeys'
@@ -61,6 +62,9 @@ import { shouldCheck, checkForUpdate, updateCheckEnabled, createManualUpdateChec
 import { waitForActivation } from './core/sw-ready'
 import { showUpdateNotice } from './ui/update-notice'
 
+// First, so the diagnostic log (core/flight-log.ts) covers everything after it, startup included.
+installFlightLog(__APP_VERSION__)
+
 // beforeinstallprompt fires before the UI mounts — capture must be
 // registered at startup or the native install prompt is lost (see
 // src/ui/promo.ts). PWA build only; the file:// build has nothing to install.
@@ -101,6 +105,7 @@ let app: AppController | null = null
 function openDocument(opened: OpenedDocument): void {
   const { doc } = opened
   onDocumentOpened(opened).then((mounted) => {
+    logEvent('document-mounted', { mounted })
     // Turned down (that file is already open, or the open one stayed): like core/fork-reopen.ts, stop the persister
     // reconcileOpen built for it, which otherwise keeps watching a store nothing will show.
     if (!mounted) opened.handle?.persister.dispose()

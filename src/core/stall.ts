@@ -8,6 +8,7 @@
 //
 // Only for calls that need no user input and normally settle in milliseconds. Never wrap a picker, a permission
 // prompt, a password prompt or a file read (a cloud-synced file can legitimately take a while to arrive).
+import { heapMb, logEvent } from './flight-log'
 
 /** Generous next to the milliseconds these calls take, so a slow but healthy start never trips it. */
 export const STALL_MS = 15_000
@@ -31,6 +32,7 @@ export function stall<T>(promise: Promise<T>, step: string, opts: { ms?: number;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       timedOut = true
+      logEvent('stall', { step, ms, heapMb: heapMb() })
       reject(new StallError(step, ms))
     }, ms)
   })

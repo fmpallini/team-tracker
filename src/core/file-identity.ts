@@ -11,6 +11,7 @@
 import type { FileSession } from './fs'
 import { idbGet, idbSet } from './idb'
 import { stall, StallError } from './stall'
+import { logEvent, since } from './flight-log'
 
 const REGISTRY_KEY = 'fileLockRegistry'
 /** Web Lock serializing registry updates, so two tabs opening the same new file at once can't each mint their own id. */
@@ -46,16 +47,19 @@ async function sameEntry(a: FileSystemFileHandle, b: FileSystemFileHandle): Prom
 
 /** Null when nothing can be decided: the opened handle cannot even answer for itself, so the registry is left alone. */
 async function lookupOrAssign(handle: FileSystemFileHandle): Promise<string | null> {
+  const start = performance.now()
+  logEvent('file-id-lock')
   const entries = (await idbGet<RegistryEntry[]>(REGISTRY_KEY)) ?? []
   // All at once, each with its own deadline, so this holds the registry lock at most SAME_ENTRY_MS (plus the reads):
   // one by one, a single dead entry held it forever. The handle compared with itself is the control — when it answers,
   // the browser is answering, and an entry that does not is dead.
   const [self, ...answers] = await Promise.all([sameEntry(handle, handle), ...entries.map((e) => sameEntry(handle, e.handle))])
   // Without that control every entry may merely be slow, this file among them: minting would give it a second id.
+  const dead = entries.filter((_, i) => answers[i] === NO_ANSWER)
+  logEvent('file-id-compared', { entries: entries.length, self: self === NO_ANSWER ? 'no-answer' : self, dead: dead.length, ms: since(start) })
   if (self === NO_ANSWER) return null
   const entry = entries.find((_, i) => answers[i] === true)
   // A dead entry is dropped like one past the cap: its file just gets a fresh id the next time it opens.
-  const dead = entries.filter((_, i) => answers[i] === NO_ANSWER)
   if (dead.length > 0) console.warn(`file id registry: dropped ${dead.length} file handle(s) that never answered`)
   // Most recently used first, by position rather than by timestamp — ties
   // within one millisecond would otherwise evict the entry just added.
@@ -74,6 +78,7 @@ async function lookupOrAssign(handle: FileSystemFileHandle): Promise<string | nu
 export async function resolveFileId(session: FileSession, locks?: LockManager): Promise<string | null> {
   const handle = session.handle
   if (!handle) return null
+  logEvent('file-id-request')
   try {
     // The registry lock is exclusive and origin-wide: an open stuck inside it (core/stall.ts) used to queue every later
     // open behind it forever. Past the deadline this open goes on with no id, like any other registry failure; the
