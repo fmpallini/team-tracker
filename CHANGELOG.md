@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.9.7] - 2026-11-26
+
+### Changed
+- The diagnostic log now records when the app was last running and what was happening just before a crash.
+
 ## [3.9.6] - 2026-11-26
 
 ### Added
