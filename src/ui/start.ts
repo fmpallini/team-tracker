@@ -25,6 +25,8 @@ import { sharedLiveDb, type LiveDb } from '../core/live-db'
 import { StallError } from '../core/stall'
 import { promptPassword, showErrorModal, toast } from './modal'
 import { reconcileOpen, type OpenedDocument } from './open-document'
+import { installStartCtrlWheelSize } from './ctrl-wheel-font'
+import { describeError, flightLogFileName, flightLogText, logEvent, since } from '../core/flight-log'
 
 const SUGGESTED_NAME = 'team-tracker.tmv'
 
@@ -91,6 +93,9 @@ function showMobileBlockScreen(container: HTMLElement, locale: Locale): void {
   )
 }
 
+/** The previous start screen's Ctrl+wheel text-size gesture, if it has not retired itself yet. */
+let disposeStartWheel: (() => void) | null = null
+
 export function showStartScreen(
   locale: Locale,
   onOpen: (opened: OpenedDocument) => void,
@@ -107,6 +112,7 @@ export function showStartScreen(
   }
 
   function reportUnexpected(e: unknown): void {
+    logEvent('open-failed', describeError(e))
     console.error(e)
     // Browser storage that stopped answering (core/stall.ts): nothing the file or the user did, so say what clears it.
     showErrorModal(locale, t(locale, e instanceof StallError ? 'err_browser_stalled' : 'err_unexpected'))
@@ -136,8 +142,12 @@ export function showStartScreen(
     try {
       await before
       if (overtaken()) return
+      const start = performance.now()
+      logEvent('reconcile-start')
       const db = await (opts?.liveDb ?? sharedLiveDb)()
+      logEvent('browser-copy-db', { available: db !== null, ms: since(start) })
       const result = await reconcileOpen({ locale, db, session, opened, password })
+      logEvent('reconcile-end', { outcome: result ? 'open' : 'backed-out', ms: since(start) })
       if (!result) return
       // Never mounted, so never given the write lock: its persister has nothing to write, but still watches the store.
       if (overtaken()) {
@@ -252,9 +262,19 @@ export function showStartScreen(
     if (outcome) await finishOpen(result.session, outcome.opened, outcome.password)
   }
 
-  const handleOpenViaPicker = (): Promise<void> => openAndDecrypt(() => pickOpen())
-  const handleReopenLast = (): Promise<void> => openAndDecrypt(reopenLast)
-  const handleLaunchFile = (handle: FileSystemFileHandle): Promise<void> => openAndDecrypt(() => openFromHandle(handle))
+  // Each route names itself in the diagnostic log, so it shows which prompt (picker, or a permission re-check) came next.
+  const handleOpenViaPicker = (): Promise<void> => {
+    logEvent('open', { route: 'picker' })
+    return openAndDecrypt(() => pickOpen())
+  }
+  const handleReopenLast = (): Promise<void> => {
+    logEvent('open', { route: 'reopen-last' })
+    return openAndDecrypt(reopenLast)
+  }
+  const handleLaunchFile = (handle: FileSystemFileHandle): Promise<void> => {
+    logEvent('open', { route: 'os-launch' })
+    return openAndDecrypt(() => openFromHandle(handle))
+  }
 
   const handleOpenFallbackFile = (file: File): Promise<void> => openAndDecrypt(async () => ({
     session: { handle: null, name: file.name, lastModified: file.lastModified },
@@ -364,6 +384,18 @@ export function showStartScreen(
         rel: 'noopener noreferrer',
       },
       `v${__APP_VERSION__}`
+    ),
+    ' · ',
+    // For a failure that took the browser down with it (core/flight-log.ts): the user saves this and sends it.
+    el(
+      'button',
+      {
+        type: 'button',
+        class: 'tt-start-diagnostics',
+        title: t(locale, 'start_diagnostics_title'),
+        onclick: () => downloadFallback(flightLogFileName(), new TextEncoder().encode(flightLogText())),
+      },
+      t(locale, 'start_diagnostics')
     )
   )
   const tagline = el('p', { class: 'tt-start-tagline' }, t(locale, 'start_tagline'))
@@ -412,6 +444,8 @@ export function showStartScreen(
   const root = el('div', { class: 'tt-start-screen' }, el('div', { class: 'tt-start-content' }, ...children))
 
   container.append(root, fileInput)
+  disposeStartWheel?.()
+  disposeStartWheel = installStartCtrlWheelSize(root, locale)
   // Enter opens something straight away. Reopen last takes over below once
   // the handle turns up, unless the user has moved on by then.
   openBtn.focus()

@@ -1,4 +1,5 @@
 import { idbGet, idbSet } from './idb'
+import { heapMb, logEvent, since } from './flight-log'
 
 export interface FileSession {
   handle: FileSystemFileHandle | null // null in fallback mode
@@ -135,10 +136,17 @@ export async function openFromHandle(
   handle: FileSystemFileHandle,
   persist = true
 ): Promise<{ session: FileSession; bytes: Uint8Array }> {
+  const start = performance.now()
   let permission = await handle.queryPermission({ mode: 'readwrite' })
-  if (permission !== 'granted') permission = await handle.requestPermission({ mode: 'readwrite' })
+  logEvent('permission-query', { state: permission })
+  if (permission !== 'granted') {
+    logEvent('permission-request')
+    permission = await handle.requestPermission({ mode: 'readwrite' })
+    logEvent('permission-answer', { state: permission, ms: since(start) })
+  }
   if (permission !== 'granted') throw new FilePermissionError()
   const { bytes, lastModified } = await readHandle(handle)
+  logEvent('file-read', { kb: Math.round(bytes.length / 1024), ms: since(start), heapMb: heapMb() })
   const session: FileSession = { handle, name: handle.name, lastModified }
   setBaseline(session, bytes)
   // `reopenLast` passes persist:false — the handle it hands in came from this
