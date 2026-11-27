@@ -183,6 +183,10 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     app = null
   }
 
+  // Markers through the build below (one synchronous run, from reconcile-end to document-mounted): a browser crash
+  // that lands here shows in the diagnostic log as the last step reached (core/flight-log.ts).
+  const mountStep = (step: string): void => logEvent('mount-step', { step })
+  mountStep('shell')
   const shell = createShell(doc.prefs.locale)
   shell.applyPrefs(doc.prefs)
   const promoBtn = promoHeaderButton(doc.prefs.locale)
@@ -220,6 +224,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   // Live read — never the closed-over `password` parameter alone: a password
   // change updates `app.password`, and the parameter goes stale after it.
   const currentPassword = (): string | null => (app ? app.password : password)
+  mountStep('panes')
   const pm = createPaneManager(shell, store)
   pm.registerModule('daily', renderDailyNotes)
   pm.registerModule('general', renderGeneralNotes)
@@ -329,6 +334,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   // The file as a periodic snapshot: written at open (when the browser copy is ahead), at Lock/Close and on the
   // timer. `getPassword`/`onExternalChange` read live state (never the closed-over `password`/`doc` params) so they
   // stay correct across password changes and re-renders.
+  mountStep('file-snapshot')
   const snapshot = createFileSnapshot({
     store,
     session,
@@ -357,7 +363,8 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   if (persister) disposers.push(persister.onErrorChange(paintPill))
   disposers.push(store.onReadOnlyChange(paintPill))
   // Asked once per opened document, in every build: the live copy lives in this origin's storage. The answer is shown in Preferences.
-  void ensurePersistentStorage()
+  mountStep('storage-persist')
+  void ensurePersistentStorage().then((persisted) => logEvent('storage-persist', { persisted }))
   disposers.push(watchFileHealth(snapshot, () => store.doc.prefs.locale))
   if (persister) disposers.push(watchStoreHealth(persister, () => store.doc.prefs.locale))
   // A document opened from the browser's copy starts ahead of its file: write it as soon as this tab may write
@@ -405,6 +412,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   window.addEventListener('beforeunload', onBeforeUnload)
   disposers.push(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
+  mountStep('tab-lock')
   const releaseTabLock = createTabLock({
     session, store, shell, locks: navigator.locks,
     flushLive: async () => {
@@ -453,6 +461,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
 
   // Other tabs must not delete this document's browser copy (core/browser-copies.ts); the prune of long-unused clean
   // copies of other documents runs once the storage is known to work.
+  mountStep('hold-document')
   disposers.push(holdDocument(store.doc.docId, navigator.locks))
   void sharedLiveDb()
     .then(async (liveDb) => {
@@ -704,6 +713,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
   disposers.push(installMouseHistoryButtons(pm, store, navPastModelessCard))
 
   disposers.push(installCtrlWheelFontSize(store, shell))
+  mountStep('done')
   return true
 }
 

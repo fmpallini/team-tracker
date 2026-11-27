@@ -4,6 +4,11 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.9.8] - 2026-11-27
+
+### Changed
+- The diagnostic log follows each step of opening a file onto the screen and tells a reload from a fresh launch.
+
 ## [3.9.7] - 2026-11-26
 
 ### Changed
