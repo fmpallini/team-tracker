@@ -4,6 +4,16 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [3.9.9] - 2026-11-27
+
+### Fixed
+- Double-clicking a .tmv file opens it again instead of showing "An unexpected error": the app first asks you to confirm, so the browser can ask for access.
+- Reopening a file that was moved, renamed or deleted says so instead of showing an unexpected error.
+
+### Changed
+- "Reopen this file automatically" now shows whenever Reopen last does, works for password-protected files too (it asks for the password), and says when the browser's "Allow on every visit" is needed.
+- The diagnostic log link is gone from the start screen.
+
 ## [3.9.8] - 2026-11-27
 
 ### Changed
