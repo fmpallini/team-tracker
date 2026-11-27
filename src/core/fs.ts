@@ -138,18 +138,13 @@ export async function pickCreate(suggestedName: string): Promise<FileSession | n
  * before reading, since a handle persisted or received across a launch
  * doesn't carry its earlier grant with it.
  *
- * Previously crashed on an installed PWA: a lapsed grant made
- * `requestPermission()` below show Chromium's "Persistent Permissions"
- * three-button dropdown ("Allow this time" / "Allow on every visit" /
- * "Don't allow"), which crashed the app specifically in the titlebar-less
- * standalone window installed PWAs used to run in — confirmed via
- * real-device repro (screenshots showing that specific dialog, as opposed to
- * the plain "Allow/Don't allow" confirm, which never crashed). Fixed not
- * here but in pwa/manifest.json's `display_override: window-controls-overlay`
- * (plus styles.css), which gives the installed app a real OS titlebar area —
- * confirmed by the user that the dropdown no longer crashes once that
- * titlebar exists. This function's original requestPermission() behavior
- * was restored unchanged once that was confirmed.
+ * A lapsed grant on a handle restored from IndexedDB makes `requestPermission()`
+ * below show Chromium's "Persistent Permissions" prompt ("Allow this time" /
+ * "Allow on every visit" / "Don't allow"). On Edge (seen on 158) answering
+ * Allow can crash the whole browser shortly after, intermittently — in a
+ * plain tab as well as the installed app, so it is Edge's own bug, not this
+ * page's: v2.4.6's window-controls-overlay titlebar was once thought to fix
+ * it and does not. The picker's own prompt (pickOpen) has never crashed.
  */
 export async function openFromHandle(
   handle: FileSystemFileHandle,
