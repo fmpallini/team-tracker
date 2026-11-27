@@ -1,4 +1,4 @@
-import { describeError, flightLogFileName, flightLogText, HEARTBEAT_MS, installFlightLog, logEvent, MAX_EVENTS, resetFlightLogForTests } from '../src/core/flight-log'
+import { describeError, flightLogFileName, flightLogText, HEARTBEAT_MS, installFlightLog, logEvent, MAX_EVENTS, previousRun, resetFlightLogForTests } from '../src/core/flight-log'
 import { stall, StallError } from '../src/core/stall'
 
 const KEY = 'tt-diagnostic-log'
@@ -85,7 +85,7 @@ test('installing logs the launch and how the last run ended, keeps a heartbeat, 
       expect.objectContaining({ kind: 'launch' }),
       expect.objectContaining({
         kind: 'previous-run',
-        detail: { lastAlive: '2026-11-26T22:56:43.000Z', lastAliveHeapMb: 7, lastEvent: 'document-mounted', secondsAliveAfterLastEvent: 30, closedNormally: false },
+        detail: { lastAlive: '2026-11-26T22:56:43.000Z', lastAliveHeapMb: 7, lastEvent: 'document-mounted', lastEventAt: '2026-11-26T22:56:13.000Z', closedNormally: false },
       }),
     ])
     expect(JSON.parse(localStorage.getItem('tt-diagnostic-alive')!).at).toBe(mountedAt + 60_000) // this run's heartbeat
@@ -118,6 +118,22 @@ test('installing logs the launch and how the last run ended, keeps a heartbeat, 
   expect(log[1]!.detail).toEqual(expect.objectContaining({ message: 'lost promise' }))
   expect(log[2]!.detail).toEqual(expect.objectContaining({ message: 'registry failed' }))
   expect(forwarded).toHaveBeenCalledWith(failure) // still reaches the real console
+})
+
+test('a run closed normally even when focus or visibility events land after its pagehide', () => {
+  logEvent('launch')
+  logEvent('pagehide')
+  logEvent('visibility', { state: 'hidden' })
+  logEvent('window-blur')
+  expect(previousRun()).toEqual(expect.objectContaining({ lastEvent: 'window-blur', closedNormally: true }))
+})
+
+test("an earlier run's pagehide says nothing about the last run", () => {
+  logEvent('launch')
+  logEvent('pagehide')
+  logEvent('launch')
+  logEvent('reconcile-end')
+  expect(previousRun()).toEqual(expect.objectContaining({ lastEvent: 'reconcile-end', closedNormally: false }))
 })
 
 test('the download is named by when it was saved', () => {

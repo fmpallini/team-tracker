@@ -28,5 +28,5 @@ test('the diagnostic log downloads with this launch in it', async ({ page }) => 
   const file = await download
   expect(file.suggestedFilename()).toMatch(/^team-tracker-diagnostics-\d{8}-\d{4}\.txt$/)
   const text = await readFile(await file.path(), 'utf8')
-  expect(text).toMatch(/ launch version=\S+ standalone=false ua=/)
+  expect(text).toMatch(/ launch version=\S+ navigation=navigate standalone=false ua=/)
 })

@@ -86,6 +86,7 @@ export function installFlightLog(version: string): void {
   const previous = previousRun()
   logEvent('launch', {
     version,
+    navigation: navigationType(),
     standalone: typeof matchMedia === 'function' && matchMedia('(display-mode: standalone), (display-mode: window-controls-overlay)').matches,
     ua: navigator.userAgent,
     heapMb: heapMb(),
@@ -121,19 +122,29 @@ export function installFlightLog(version: string): void {
 
 /**
  * How the last run ended. Its last heartbeat says when it was still alive (to HEARTBEAT_MS) even though a crash leaves
- * no event; its last event says whether it closed normally (pagehide) and what it did last. Null on a first launch.
+ * no event; a pagehide since its launch says it closed or reloaded normally. Null on a first launch.
  */
-function previousRun(): Detail | null {
+export function previousRun(): Detail | null {
   const alive = lastHeartbeat()
-  const last = load().at(-1)
+  const log = load()
+  const last = log.at(-1)
   if (!alive && !last) return null
+  // A normal close or reload fires pagehide, but focus/visibility events can still land after it, so look at the
+  // whole run (everything since its launch), not just its final event.
+  const runStart = log.map((e) => e.kind).lastIndexOf('launch')
   return {
     lastAlive: alive ? new Date(alive.at).toISOString() : null,
     lastAliveHeapMb: alive?.heapMb,
     lastEvent: last?.kind,
-    secondsAliveAfterLastEvent: alive && last ? Math.round((alive.at - last.at) / 1000) : undefined,
-    closedNormally: last?.kind === 'pagehide',
+    lastEventAt: last ? new Date(last.at).toISOString() : undefined,
+    closedNormally: log.slice(Math.max(0, runStart)).some((e) => e.kind === 'pagehide'),
   }
+}
+
+/** How this page was reached: 'navigate' (a launch), 'reload' or 'back_forward'. */
+function navigationType(): string | undefined {
+  const entry = typeof performance.getEntriesByType === 'function' ? performance.getEntriesByType('navigation')[0] : undefined
+  return (entry as PerformanceNavigationTiming | undefined)?.type
 }
 
 function lastHeartbeat(): { at: number; heapMb?: number } | null {
