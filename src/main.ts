@@ -422,6 +422,7 @@ async function onDocumentOpened(opened: OpenedDocument): Promise<boolean> {
     // Per file, not per file name — see core/file-identity.ts.
     lockKey: Promise.resolve(fileLockKey(session, opened.fileId)),
     onReadOnlyChange: (readOnly) => {
+      logEvent('write-access', { granted: !readOnly })
       setEditorsReadOnly(readOnly)
       setReadOnlyLock(readOnly, () => store.doc.prefs.locale)
     },

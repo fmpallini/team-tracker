@@ -1,4 +1,4 @@
-import { describeError, flightLogFileName, flightLogText, installFlightLog, logEvent, MAX_EVENTS, resetFlightLogForTests } from '../src/core/flight-log'
+import { describeError, flightLogFileName, flightLogText, HEARTBEAT_MS, installFlightLog, logEvent, MAX_EVENTS, resetFlightLogForTests } from '../src/core/flight-log'
 import { stall, StallError } from '../src/core/stall'
 
 const KEY = 'tt-diagnostic-log'
@@ -64,11 +64,43 @@ test('a stall deadline is logged with the step that never answered', async () =>
   expect(stored()[0]).toEqual(expect.objectContaining({ kind: 'stall', detail: expect.objectContaining({ step: 'file id registry', ms: 50 }) }))
 })
 
-test('installing logs the launch and catches errors the code did not handle, once', () => {
+// installFlightLog runs once per page, so one test walks a whole launch: how the last run ended, the heartbeat, and
+// the errors the code did not handle.
+test('installing logs the launch and how the last run ended, keeps a heartbeat, and catches unhandled errors, once', () => {
+  // The last run crashed: its final event was the mount, and its heartbeat went on 30 s past it.
+  const mountedAt = Date.parse('2026-11-26T22:56:13Z')
+  localStorage.setItem(KEY, JSON.stringify([{ at: mountedAt, kind: 'document-mounted' }]))
+  localStorage.setItem('tt-diagnostic-alive', JSON.stringify({ at: mountedAt + 30_000, heapMb: 7 }))
+  resetFlightLogForTests()
+  vi.useFakeTimers({ now: mountedAt + 60_000 })
   const forwarded = vi.fn()
   console.error = forwarded
-  installFlightLog('9.9.9')
-  installFlightLog('9.9.9') // a second call adds nothing
+  // A partial stand-in (e2e's font-size-layout spec has one): no addEventListener, so the titlebar watcher throws.
+  Object.defineProperty(navigator, 'windowControlsOverlay', { configurable: true, value: { visible: true, getTitlebarAreaRect: () => ({ width: 900 }) } })
+  try {
+    expect(() => installFlightLog('9.9.9')).not.toThrow()
+    installFlightLog('9.9.9') // a second call adds nothing
+    expect(kinds()).toContain('diagnostics-unavailable')
+    expect(stored().slice(1, 3)).toEqual([
+      expect.objectContaining({ kind: 'launch' }),
+      expect.objectContaining({
+        kind: 'previous-run',
+        detail: { lastAlive: '2026-11-26T22:56:43.000Z', lastAliveHeapMb: 7, lastEvent: 'document-mounted', secondsAliveAfterLastEvent: 30, closedNormally: false },
+      }),
+    ])
+    expect(JSON.parse(localStorage.getItem('tt-diagnostic-alive')!).at).toBe(mountedAt + 60_000) // this run's heartbeat
+
+    vi.advanceTimersByTime(HEARTBEAT_MS)
+    expect(kinds()).not.toContain('page-froze')
+    vi.setSystemTime(Date.now() + 20_000) // the page stops for 20 s, then its timers catch up
+    vi.advanceTimersByTime(HEARTBEAT_MS)
+    expect(stored().at(-1)).toEqual(expect.objectContaining({ kind: 'page-froze', detail: { seconds: 22 } }))
+  } finally {
+    vi.useRealTimers()
+    delete (navigator as unknown as Record<string, unknown>).windowControlsOverlay
+  }
+  localStorage.clear()
+  resetFlightLogForTests()
 
   window.dispatchEvent(new ErrorEvent('error', { error: new RangeError('boom'), message: 'boom', filename: 'https://x/app.js', lineno: 3, colno: 7 }))
   const rejection = new Event('unhandledrejection') as Event & { reason?: unknown }
@@ -77,12 +109,14 @@ test('installing logs the launch and catches errors the code did not handle, onc
   const failure = new Error('registry failed')
   console.error(failure)
 
-  expect(kinds()).toEqual(['launch', 'uncaught', 'unhandled-rejection', 'console-error'])
+  window.dispatchEvent(new Event('blur'))
+  window.dispatchEvent(new Event('focus'))
+
+  expect(kinds()).toEqual(['uncaught', 'unhandled-rejection', 'console-error', 'window-blur', 'window-focus'])
   const log = stored()
-  expect(log[0]!.detail).toEqual(expect.objectContaining({ version: '9.9.9' }))
-  expect(log[1]!.detail).toEqual(expect.objectContaining({ error: 'RangeError', message: 'boom', at: 'app.js:3:7' }))
-  expect(log[2]!.detail).toEqual(expect.objectContaining({ message: 'lost promise' }))
-  expect(log[3]!.detail).toEqual(expect.objectContaining({ message: 'registry failed' }))
+  expect(log[0]!.detail).toEqual(expect.objectContaining({ error: 'RangeError', message: 'boom', at: 'app.js:3:7' }))
+  expect(log[1]!.detail).toEqual(expect.objectContaining({ message: 'lost promise' }))
+  expect(log[2]!.detail).toEqual(expect.objectContaining({ message: 'registry failed' }))
   expect(forwarded).toHaveBeenCalledWith(failure) // still reaches the real console
 })
 
