@@ -20,7 +20,6 @@
 // copy told the file is current. The fingerprint is null whenever this tab cannot
 // be sure what the file holds (the browser copy was ahead at open, another tab
 // wrote it, an edit raced a write); then the write goes ahead.
-import { logEvent, since } from './flight-log'
 import type { Store } from './store'
 import type { Prefs } from './types'
 import type { LivePersister } from './live-persist'
@@ -221,14 +220,7 @@ export function createFileSnapshot(deps: FileSnapshotDeps): FileSnapshot {
   }
 
   function start(reason: WriteReason): Promise<WriteResult> {
-    const begun = performance.now()
-    logEvent('file-write-start', { reason })
-    const p: Promise<WriteResult> = enqueue(() => attempt(reason))
-      .then((r) => {
-        logEvent('file-write-end', { reason, ok: r.ok, why: r.ok ? undefined : r.reason, ms: since(begun) })
-        return r
-      })
-      .finally(() => { if (inflight === p) inflight = null })
+    const p: Promise<WriteResult> = enqueue(() => attempt(reason)).finally(() => { if (inflight === p) inflight = null })
     inflight = p
     return p
   }
@@ -266,9 +258,7 @@ export function createFileSnapshot(deps: FileSnapshotDeps): FileSnapshot {
     try {
       // Re-prompting a downgraded grant needs the user activation of the click that got us here.
       let permission = await handle.queryPermission({ mode: 'readwrite' })
-      logEvent('regrant-query', { state: permission })
       if (permission !== 'granted') permission = await handle.requestPermission({ mode: 'readwrite' })
-      logEvent('regrant-answer', { state: permission })
       if (permission !== 'granted') return false
     } catch (e) {
       console.error(e)

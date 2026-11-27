@@ -1,5 +1,4 @@
 import { idbGet, idbSet } from './idb'
-import { heapMb, logEvent, since } from './flight-log'
 
 export interface FileSession {
   handle: FileSystemFileHandle | null // null in fallback mode
@@ -20,6 +19,26 @@ export class ExternalChangeError extends Error {}
  * button that does nothing.
  */
 export class FilePermissionError extends Error {}
+
+/** A remembered or OS-launched file is no longer where its handle points: moved, renamed or deleted. */
+export class FileMissingError extends Error {}
+
+/**
+ * Read-write access has to be asked for, and Chromium asks only right after a click in the page
+ * (`requestPermission` otherwise throws SecurityError "User activation is required"). A file the OS launched the app
+ * with (double-click, File Handling API) arrives that way: no click, and write access not yet granted. The caller gets
+ * a click (a dialog's button) and calls again from inside it.
+ */
+export class PermissionNeedsClickError extends Error {
+  constructor(readonly fileName: string) {
+    super(`read-write access to ${fileName} needs a click to be asked for`)
+  }
+}
+
+/** A DOMException's name. Not `instanceof Error`: jsdom's DOMException is not an Error (browsers' is). */
+function errorName(e: unknown): string | undefined {
+  return typeof e === 'object' && e !== null && 'name' in e ? String((e as { name: unknown }).name) : undefined
+}
 
 /**
  * Size and SHA-256 of what this session last read from, or wrote to, its file.
@@ -134,19 +153,32 @@ export async function pickCreate(suggestedName: string): Promise<FileSession | n
  */
 export async function openFromHandle(
   handle: FileSystemFileHandle,
-  persist = true
+  persist = true,
+  /**
+   * false: never prompt — a grant that is not already there is a FilePermissionError. For the start screen's
+   * auto-reopen, which runs without a click: a prompt with no user gesture either auto-denies or throws in Chromium.
+   */
+  prompt = true
 ): Promise<{ session: FileSession; bytes: Uint8Array }> {
-  const start = performance.now()
   let permission = await handle.queryPermission({ mode: 'readwrite' })
-  logEvent('permission-query', { state: permission })
-  if (permission !== 'granted') {
-    logEvent('permission-request')
-    permission = await handle.requestPermission({ mode: 'readwrite' })
-    logEvent('permission-answer', { state: permission, ms: since(start) })
+  if (permission !== 'granted' && prompt) {
+    try {
+      permission = await handle.requestPermission({ mode: 'readwrite' })
+    } catch (e) {
+      if (errorName(e) === 'SecurityError') throw new PermissionNeedsClickError(handle.name)
+      throw e
+    }
   }
   if (permission !== 'granted') throw new FilePermissionError()
-  const { bytes, lastModified } = await readHandle(handle)
-  logEvent('file-read', { kb: Math.round(bytes.length / 1024), ms: since(start), heapMb: heapMb() })
+  let read: { bytes: Uint8Array; lastModified: number }
+  try {
+    read = await readHandle(handle)
+  } catch (e) {
+    // A handle outlives its file: moved, renamed or deleted since (or a cloud folder / drive not there right now).
+    if (errorName(e) === 'NotFoundError') throw new FileMissingError()
+    throw e
+  }
+  const { bytes, lastModified } = read
   const session: FileSession = { handle, name: handle.name, lastModified }
   setBaseline(session, bytes)
   // `reopenLast` passes persist:false — the handle it hands in came from this
@@ -162,22 +194,13 @@ export async function reopenLast(): Promise<{ session: FileSession; bytes: Uint8
 }
 
 /**
- * Silent variant of `reopenLast` for the "auto-load last file on startup"
- * checkbox (`ui/start.ts`): only ever calls `queryPermission`, never
- * `requestPermission` — a permission prompt shown with no user gesture (e.g.
- * on page load) either auto-denies or throws in Chromium, so this must not
- * risk it. Returns null whenever silent access isn't available, leaving the
- * normal (gesture-driven) reopen button as the fallback.
+ * Whether the page can still read and write `handle` without asking — the start screen's silent check for
+ * auto-reopen. Only queries, never prompts, and reads nothing: the file itself is read only when it is actually
+ * opened. Chromium keeps a grant while any window of the site is open, and across launches only after "Allow on
+ * every visit".
  */
-export async function peekLastFile(): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
-  const handle = await idbGet<FileSystemFileHandle>('lastHandle')
-  if (!handle) return null
-  const permission = await handle.queryPermission({ mode: 'readwrite' })
-  if (permission !== 'granted') return null
-  const { bytes, lastModified } = await readHandle(handle)
-  const session: FileSession = { handle, name: handle.name, lastModified }
-  setBaseline(session, bytes)
-  return { session, bytes }
+export async function hasReadWriteAccess(handle: FileSystemFileHandle): Promise<boolean> {
+  return (await handle.queryPermission({ mode: 'readwrite' })) === 'granted'
 }
 
 /**

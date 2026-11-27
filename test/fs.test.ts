@@ -1,4 +1,4 @@
-import { writeFile, forceWrite, openFromHandle, reopenLast, peekLastFile, sameEntry, pickCreate, pickOpen, readCurrent, downloadFallback, ExternalChangeError, FilePermissionError, type FileSession } from '../src/core/fs'
+import { writeFile, forceWrite, openFromHandle, reopenLast, hasReadWriteAccess, sameEntry, pickCreate, pickOpen, readCurrent, downloadFallback, ExternalChangeError, FilePermissionError, FileMissingError, PermissionNeedsClickError, type FileSession } from '../src/core/fs'
 
 function mockHandle(initialMtime: number, permission?: PermissionState) {
   let mtime = initialMtime
@@ -150,27 +150,49 @@ test('reopenLast returns null when there is no stored handle', async () => {
   expect(await reopenLast()).toBeNull()
 })
 
-test('peekLastFile returns null when there is no stored handle', async () => {
-  idbMocks.idbGet.mockResolvedValueOnce(undefined)
-  expect(await peekLastFile()).toBeNull()
+test('hasReadWriteAccess only queries: granted is true, anything else false, never a prompt and never a read', async () => {
+  for (const [state, expected] of [['granted', true], ['prompt', false], ['denied', false]] as const) {
+    const handle = mockLaunchHandle(state)
+    const getFile = vi.spyOn(handle, 'getFile')
+    expect(await hasReadWriteAccess(handle)).toBe(expected)
+    expect(handle.requestPermission).not.toHaveBeenCalled()
+    expect(getFile).not.toHaveBeenCalled()
+  }
 })
 
-test('peekLastFile returns null without ever prompting when permission is not silently granted', async () => {
-  const handle = mockLaunchHandle('prompt')
-  idbMocks.idbGet.mockResolvedValueOnce(handle)
-  const result = await peekLastFile()
-  expect(result).toBeNull()
-  expect(handle.requestPermission).not.toHaveBeenCalled()
-})
-
-test('peekLastFile reads session+bytes silently when permission is already granted', async () => {
+test('openFromHandle with prompt off (auto-reopen, no click) reads an already granted file', async () => {
   const handle = mockLaunchHandle('granted')
-  idbMocks.idbGet.mockResolvedValueOnce(handle)
-  const result = await peekLastFile()
-  expect(result).not.toBeNull()
-  expect(result!.session).toEqual({ handle, name: 'launched.tmv', lastModified: 42 })
-  expect(result!.bytes).toEqual(new Uint8Array([7]))
+  const result = await openFromHandle(handle, false, false)
+  expect(result.bytes).toEqual(new Uint8Array([7]))
+})
+
+test('openFromHandle with prompt off never asks: a grant not already there is a FilePermissionError', async () => {
+  const handle = mockLaunchHandle('prompt')
+  await expect(openFromHandle(handle, false, false)).rejects.toBeInstanceOf(FilePermissionError)
   expect(handle.requestPermission).not.toHaveBeenCalled()
+})
+
+test('openFromHandle: a prompt refused for want of a click (an OS-launched file) is PermissionNeedsClickError, naming the file', async () => {
+  const handle = mockLaunchHandle('prompt')
+  ;(handle.requestPermission as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+    Object.assign(new Error("Failed to execute 'requestPermission' on 'FileSystemHandle': User activation is required to request permissions."), { name: 'SecurityError' })
+  )
+  const failure = await openFromHandle(handle).catch((e: unknown) => e)
+  expect(failure).toBeInstanceOf(PermissionNeedsClickError)
+  expect((failure as PermissionNeedsClickError).fileName).toBe('launched.tmv')
+})
+
+test('openFromHandle reports a file moved, renamed or deleted since as FileMissingError', async () => {
+  const handle = mockLaunchHandle('granted')
+  vi.spyOn(handle, 'getFile').mockRejectedValue(Object.assign(new Error('gone'), { name: 'NotFoundError' }))
+  await expect(openFromHandle(handle)).rejects.toBeInstanceOf(FileMissingError)
+})
+
+test('openFromHandle passes any other read failure through unchanged', async () => {
+  const handle = mockLaunchHandle('granted')
+  const failure = Object.assign(new Error('busy'), { name: 'NotReadableError' })
+  vi.spyOn(handle, 'getFile').mockRejectedValue(failure)
+  await expect(openFromHandle(handle)).rejects.toBe(failure)
 })
 
 test('sameEntry delegates to handle.isSameEntry', async () => {
