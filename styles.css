@@ -679,8 +679,6 @@ body { background: var(--bg); color: var(--fg); }
 .tt-start-version { margin-top: -1.25rem; font-size: .75rem; letter-spacing: .02em; }
 .tt-start-version a { color: var(--muted); text-decoration: underline; }
 .tt-start-version a:hover { color: var(--fg); }
-.tt-start-diagnostics { padding: 0; border: 0; background: none; font: inherit; color: var(--muted); text-decoration: underline; cursor: pointer; }
-.tt-start-diagnostics:hover { color: var(--fg); }
 .tt-start-tagline { color: var(--muted); max-width: 32em; font-size: .95rem; line-height: 1.5; }
 .tt-start-advantages { list-style: none; padding: 0; display: flex; flex-direction: column; gap: .5rem; max-width: 36em; font-size: .9rem; color: var(--muted); line-height: 1.6; }
 .tt-start-advantages li { text-align: left; }
@@ -691,6 +689,7 @@ body { background: var(--bg); color: var(--fg); }
 .tt-start-btn { padding: .6rem 1rem; font-size: 1rem; }
 .tt-start-reopen-row { display: flex; flex-direction: column; gap: .5rem; padding: .5rem; border-radius: var(--r-lg); background: var(--panel); border: 1px solid var(--border); }
 .tt-start-autoload { display: flex; align-items: center; gap: .35rem; font-size: .8rem; color: var(--muted); cursor: pointer; padding: 0 .1rem; }
+.tt-start-autoload-hint { max-width: 22em; margin: 0; padding: 0 .1rem; font-size: .75rem; line-height: 1.4; color: var(--muted); }
 .tt-start-fallback-notice { color: var(--muted); max-width: 32em; font-size: .9rem; }
 /* Holds its line while empty, so the buttons don't shift when an open starts. */
 .tt-start-opening { min-height: 1.5em; max-width: 260px; overflow-wrap: anywhere; font-size: 1.05rem; font-weight: 500; color: var(--fg); }

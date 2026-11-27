@@ -15,6 +15,7 @@ import type { Doc } from '../src/core/types'
 
 const fsMocks = vi.hoisted(() => ({
   FilePermissionError: class FilePermissionError extends Error {},
+  FileMissingError: class FileMissingError extends Error {},
   supportsFsApi: true,
   pickOpen: vi.fn(),
   pickCreate: vi.fn(),
@@ -22,7 +23,7 @@ const fsMocks = vi.hoisted(() => ({
   writeFile: vi.fn(async (_s: unknown, _b: Uint8Array) => {}),
   downloadFallback: vi.fn(),
   openFromHandle: vi.fn(),
-  peekLastFile: vi.fn(async () => null as unknown),
+  hasReadWriteAccess: vi.fn(async (_handle: unknown) => false),
 }))
 vi.mock('../src/core/fs', () => fsMocks)
 // A working key/value store: core/file-identity.ts keeps its file registry there, so one file keeps one id across opens.
@@ -44,7 +45,7 @@ beforeEach(async () => {
   fsMocks.pickOpen.mockReset()
   fsMocks.pickCreate.mockReset()
   fsMocks.writeFile.mockClear()
-  fsMocks.peekLastFile.mockReset().mockResolvedValue(null)
+  fsMocks.hasReadWriteAccess.mockReset().mockResolvedValue(false)
   dialogs.askOlderFile.mockReset().mockResolvedValue('browser')
   dialogs.askBothChanged.mockReset().mockResolvedValue('browser')
 })

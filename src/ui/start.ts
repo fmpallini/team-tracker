@@ -11,8 +11,9 @@ import {
   writeFile,
   downloadFallback,
   openFromHandle,
-  peekLastFile,
+  hasReadWriteAccess,
   FilePermissionError,
+  FileMissingError,
   type FileSession,
 } from '../core/fs'
 import { idbGet, idbSet } from '../core/idb'
@@ -26,7 +27,6 @@ import { StallError } from '../core/stall'
 import { promptPassword, showErrorModal, toast } from './modal'
 import { reconcileOpen, type OpenedDocument } from './open-document'
 import { installStartCtrlWheelSize } from './ctrl-wheel-font'
-import { describeError, flightLogFileName, flightLogText, logEvent, since } from '../core/flight-log'
 
 const SUGGESTED_NAME = 'team-tracker.tmv'
 
@@ -112,7 +112,6 @@ export function showStartScreen(
   }
 
   function reportUnexpected(e: unknown): void {
-    logEvent('open-failed', describeError(e))
     console.error(e)
     // Browser storage that stopped answering (core/stall.ts): nothing the file or the user did, so say what clears it.
     showErrorModal(locale, t(locale, e instanceof StallError ? 'err_browser_stalled' : 'err_unexpected'))
@@ -142,12 +141,8 @@ export function showStartScreen(
     try {
       await before
       if (overtaken()) return
-      const start = performance.now()
-      logEvent('reconcile-start')
       const db = await (opts?.liveDb ?? sharedLiveDb)()
-      logEvent('browser-copy-db', { available: db !== null, ms: since(start) })
       const result = await reconcileOpen({ locale, db, session, opened, password })
-      logEvent('reconcile-end', { outcome: result ? 'open' : 'backed-out', ms: since(start) })
       if (!result) return
       // Never mounted, so never given the write lock: its persister has nothing to write, but still watches the store.
       if (overtaken()) {
@@ -162,7 +157,8 @@ export function showStartScreen(
     }
   }
 
-  async function decryptLoop(bytes: Uint8Array): Promise<{ opened: OpenedDoc; password: string } | null> {
+  /** `superseded`: the auto-reopen's way out — once the user has started another open, it asks for no password. */
+  async function decryptLoop(bytes: Uint8Array, superseded?: () => boolean): Promise<{ opened: OpenedDoc; password: string } | null> {
     // An empty file (a create flow that was cancelled before its first write)
     // or any non-.tmv file can never be opened by any password: say so now
     // instead of after the user has typed one.
@@ -171,6 +167,7 @@ export function showStartScreen(
       return null
     }
     for (;;) {
+      if (superseded?.()) return null
       const result = await promptPassword(locale, { title: t(locale, 'open_file') })
       if (result === null) return null
       // allowPlain is never set for this prompt, so result is always {password}.
@@ -237,12 +234,25 @@ export function showStartScreen(
         showErrorModal(locale, t(locale, 'err_file_permission'))
         return
       }
+      // The handle outlived its file (moved, renamed, deleted): the picker finds it wherever it went.
+      if (e instanceof FileMissingError) {
+        showErrorModal(locale, t(locale, 'err_file_missing'))
+        return
+      }
       throw e
     }
     if (!result) return
+    await decodeAndFinish(result.session, result.bytes)
+  }
+
+  /**
+   * The read file to an open document: a plain file opens directly, an encrypted one asks for its password. Shared by
+   * every open route and the auto-reopen, which passes `superseded` so an open the user starts meanwhile wins.
+   */
+  async function decodeAndFinish(session: FileSession, bytes: Uint8Array, superseded?: () => boolean): Promise<void> {
     let plain: OpenedDoc | null
     try {
-      plain = parsePlainWithVersion(result.bytes)
+      plain = parsePlainWithVersion(bytes)
     } catch (e) {
       if (e instanceof CorruptFileError) {
         showErrorModal(locale, corruptMessage(e))
@@ -255,26 +265,16 @@ export function showStartScreen(
       throw e
     }
     if (plain) {
-      await finishOpen(result.session, plain, null)
+      await finishOpen(session, plain, null, superseded)
       return
     }
-    const outcome = await decryptLoop(result.bytes)
-    if (outcome) await finishOpen(result.session, outcome.opened, outcome.password)
+    const outcome = await decryptLoop(bytes, superseded)
+    if (outcome) await finishOpen(session, outcome.opened, outcome.password, superseded)
   }
 
-  // Each route names itself in the diagnostic log, so it shows which prompt (picker, or a permission re-check) came next.
-  const handleOpenViaPicker = (): Promise<void> => {
-    logEvent('open', { route: 'picker' })
-    return openAndDecrypt(() => pickOpen())
-  }
-  const handleReopenLast = (): Promise<void> => {
-    logEvent('open', { route: 'reopen-last' })
-    return openAndDecrypt(reopenLast)
-  }
-  const handleLaunchFile = (handle: FileSystemFileHandle): Promise<void> => {
-    logEvent('open', { route: 'os-launch' })
-    return openAndDecrypt(() => openFromHandle(handle))
-  }
+  const handleOpenViaPicker = (): Promise<void> => openAndDecrypt(() => pickOpen())
+  const handleReopenLast = (): Promise<void> => openAndDecrypt(reopenLast)
+  const handleLaunchFile = (handle: FileSystemFileHandle): Promise<void> => openAndDecrypt(() => openFromHandle(handle))
 
   const handleOpenFallbackFile = (file: File): Promise<void> => openAndDecrypt(async () => ({
     session: { handle: null, name: file.name, lastModified: file.lastModified },
@@ -384,18 +384,6 @@ export function showStartScreen(
         rel: 'noopener noreferrer',
       },
       `v${__APP_VERSION__}`
-    ),
-    ' · ',
-    // For a failure that took the browser down with it (core/flight-log.ts): the user saves this and sends it.
-    el(
-      'button',
-      {
-        type: 'button',
-        class: 'tt-start-diagnostics',
-        title: t(locale, 'start_diagnostics_title'),
-        onclick: () => downloadFallback(flightLogFileName(), new TextEncoder().encode(flightLogText())),
-      },
-      t(locale, 'start_diagnostics')
     )
   )
   const tagline = el('p', { class: 'tt-start-tagline' }, t(locale, 'start_tagline'))
@@ -429,9 +417,17 @@ export function showStartScreen(
     },
   }) as HTMLInputElement
   const autoLoadRow = el('label', { class: 'tt-start-autoload' }, autoLoadCheckbox, ' ' + t(locale, 'start_auto_load_last'))
-  autoLoadRow.style.display = 'none'
+  // Ticked, but the browser did not keep this page's access to the file since last time, so it cannot open by itself.
+  const autoLoadHint = el('p', { class: 'tt-start-autoload-hint' }, t(locale, 'start_auto_load_needs_grant'))
+  /** Whether the browser still lets this page read and write the last file; null until the check answers. */
+  let accessKept: boolean | null = null
+  const syncAutoLoadHint = (): void => {
+    autoLoadHint.style.display = autoLoadCheckbox.checked && accessKept === false ? '' : 'none'
+  }
+  autoLoadCheckbox.addEventListener('change', syncAutoLoadHint)
+  syncAutoLoadHint()
 
-  const reopenRow = el('div', { class: 'tt-start-reopen-row' }, reopenBtn, autoLoadRow)
+  const reopenRow = el('div', { class: 'tt-start-reopen-row' }, reopenBtn, autoLoadRow, autoLoadHint)
   const buttonsCol = el('div', { class: 'tt-start-buttons' }, reopenRow, openBtn, createBtn, openingStatus)
   reopenBtn.style.display = 'none'
   reopenRow.style.display = 'none'
@@ -450,47 +446,40 @@ export function showStartScreen(
   // the handle turns up, unless the user has moved on by then.
   openBtn.focus()
 
-  idbGet('lastHandle')
-    .then((handle) => {
-      if (handle !== undefined) {
-        reopenBtn.style.display = ''
-        reopenRow.style.display = ''
-        if (document.activeElement === openBtn) reopenBtn.focus()
-      }
-    })
-    .catch((e: unknown) => console.error(e))
-
-  // Silent (no permission prompt) peek at the last file, to offer/act on
-  // "auto-open on startup" — only possible when it's passwordless (nothing
-  // to prompt for) and the FS permission grant hasn't lapsed since last
-  // visit. Never surfaces an error modal: an unreadable/corrupt last file
-  // here just means no auto-load, same as if there were no last file at all.
-  async function checkAutoLoad(): Promise<void> {
-    const result = await peekLastFile()
-    if (!result) return
-    let plain: OpenedDoc | null
+  /**
+   * The remembered file: Reopen last and its auto-reopen checkbox appear as soon as it is known, before any permission
+   * check (a handle can be slow to answer, and the button must not wait on it). Then a silent check — a query, never a
+   * prompt, and no file read — says whether the browser kept this page's access since last time. Only with that access,
+   * the box ticked, and no other open started does the file open by itself: a password-less one directly, an encrypted
+   * one by asking for its password. Without it, a ticked box says what would let it work.
+   */
+  async function initRememberedFile(): Promise<void> {
+    const handle = await idbGet<FileSystemFileHandle>('lastHandle')
+    if (handle === undefined) return
+    autoLoadCheckbox.checked = (await idbGet<boolean>('autoLoadLast')) === true
+    reopenBtn.style.display = ''
+    reopenRow.style.display = ''
+    if (document.activeElement === openBtn) reopenBtn.focus()
+    accessKept = await hasReadWriteAccess(handle)
+    syncAutoLoadHint()
+    // skipAutoLoad: this render came from closeFile() (main.ts) — the user just chose to leave this exact file, so
+    // re-opening it right back would trap them. And an open the user (or the OS launch) already started wins outright.
+    if (!accessKept || !autoLoadCheckbox.checked || opts?.skipAutoLoad || openStarted) return
+    let result: { session: FileSession; bytes: Uint8Array }
     try {
-      plain = parsePlainWithVersion(result.bytes)
+      result = await openFromHandle(handle, false, false)
     } catch (e) {
-      console.error(e)
-      return
+      // Gone or no longer granted: nothing opens by itself, and clicking Reopen last says why.
+      if (e instanceof FileMissingError || e instanceof FilePermissionError) return
+      throw e
     }
-    if (!plain) return
-    const autoLoad = (await idbGet<boolean>('autoLoadLast')) === true
-    autoLoadRow.style.display = ''
-    autoLoadCheckbox.checked = autoLoad
-    // skipAutoLoad: this render came from closeFile() (main.ts) — the user
-    // just chose to leave this exact file, so re-opening it right back
-    // would trap them (open/create would be unreachable). The checkbox still
-    // reflects/edits the pref; only the immediate re-open is suppressed.
-    // ...and an open the user (or the OS launch) already started wins outright.
-    if (autoLoad && !opts?.skipAutoLoad && !openStarted) {
-      // Checked again by finishOpen: a slow or stalled browser storage can keep this open waiting long enough for
-      // the user to open a file themselves, and that one wins.
-      await finishOpen(result.session, plain, null, () => openStarted)
-    }
+    // Checked again by finishOpen (and before any password prompt): a slow read or a stalled browser storage can keep
+    // this open waiting long enough for the user to open a file themselves, and that one wins.
+    const superseded = (): boolean => openStarted
+    if (superseded()) return
+    await decodeAndFinish(result.session, result.bytes, superseded)
   }
-  checkAutoLoad().catch((e: unknown) => console.error(e))
+  initRememberedFile().catch(reportUnexpected)
 
   // Absent outside Chromium and in jsdom (tests) — feature-detected, no-op
   // everywhere else.
