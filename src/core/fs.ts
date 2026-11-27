@@ -24,6 +24,23 @@ export class FilePermissionError extends Error {}
 export class FileMissingError extends Error {}
 
 /**
+ * Read-write access has to be asked for, and Chromium asks only right after a click in the page
+ * (`requestPermission` otherwise throws SecurityError "User activation is required"). A file the OS launched the app
+ * with (double-click, File Handling API) arrives that way: no click, and write access not yet granted. The caller gets
+ * a click (a dialog's button) and calls again from inside it.
+ */
+export class PermissionNeedsClickError extends Error {
+  constructor(readonly fileName: string) {
+    super(`read-write access to ${fileName} needs a click to be asked for`)
+  }
+}
+
+/** A DOMException's name. Not `instanceof Error`: jsdom's DOMException is not an Error (browsers' is). */
+function errorName(e: unknown): string | undefined {
+  return typeof e === 'object' && e !== null && 'name' in e ? String((e as { name: unknown }).name) : undefined
+}
+
+/**
  * Size and SHA-256 of what this session last read from, or wrote to, its file.
  * Lets `writeFile` tell a real external edit from a mere mtime bump (cloud-sync
  * clients and antivirus touch files without changing them): when the mtime
@@ -144,14 +161,21 @@ export async function openFromHandle(
   prompt = true
 ): Promise<{ session: FileSession; bytes: Uint8Array }> {
   let permission = await handle.queryPermission({ mode: 'readwrite' })
-  if (permission !== 'granted' && prompt) permission = await handle.requestPermission({ mode: 'readwrite' })
+  if (permission !== 'granted' && prompt) {
+    try {
+      permission = await handle.requestPermission({ mode: 'readwrite' })
+    } catch (e) {
+      if (errorName(e) === 'SecurityError') throw new PermissionNeedsClickError(handle.name)
+      throw e
+    }
+  }
   if (permission !== 'granted') throw new FilePermissionError()
   let read: { bytes: Uint8Array; lastModified: number }
   try {
     read = await readHandle(handle)
   } catch (e) {
     // A handle outlives its file: moved, renamed or deleted since (or a cloud folder / drive not there right now).
-    if (e instanceof Error && e.name === 'NotFoundError') throw new FileMissingError()
+    if (errorName(e) === 'NotFoundError') throw new FileMissingError()
     throw e
   }
   const { bytes, lastModified } = read

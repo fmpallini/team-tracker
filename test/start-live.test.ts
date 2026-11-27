@@ -16,6 +16,7 @@ import type { Doc } from '../src/core/types'
 const fsMocks = vi.hoisted(() => ({
   FilePermissionError: class FilePermissionError extends Error {},
   FileMissingError: class FileMissingError extends Error {},
+  PermissionNeedsClickError: class PermissionNeedsClickError extends Error { constructor(readonly fileName: string) { super() } },
   supportsFsApi: true,
   pickOpen: vi.fn(),
   pickCreate: vi.fn(),

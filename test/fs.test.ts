@@ -1,4 +1,4 @@
-import { writeFile, forceWrite, openFromHandle, reopenLast, hasReadWriteAccess, sameEntry, pickCreate, pickOpen, readCurrent, downloadFallback, ExternalChangeError, FilePermissionError, FileMissingError, type FileSession } from '../src/core/fs'
+import { writeFile, forceWrite, openFromHandle, reopenLast, hasReadWriteAccess, sameEntry, pickCreate, pickOpen, readCurrent, downloadFallback, ExternalChangeError, FilePermissionError, FileMissingError, PermissionNeedsClickError, type FileSession } from '../src/core/fs'
 
 function mockHandle(initialMtime: number, permission?: PermissionState) {
   let mtime = initialMtime
@@ -170,6 +170,16 @@ test('openFromHandle with prompt off never asks: a grant not already there is a 
   const handle = mockLaunchHandle('prompt')
   await expect(openFromHandle(handle, false, false)).rejects.toBeInstanceOf(FilePermissionError)
   expect(handle.requestPermission).not.toHaveBeenCalled()
+})
+
+test('openFromHandle: a prompt refused for want of a click (an OS-launched file) is PermissionNeedsClickError, naming the file', async () => {
+  const handle = mockLaunchHandle('prompt')
+  ;(handle.requestPermission as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+    Object.assign(new Error("Failed to execute 'requestPermission' on 'FileSystemHandle': User activation is required to request permissions."), { name: 'SecurityError' })
+  )
+  const failure = await openFromHandle(handle).catch((e: unknown) => e)
+  expect(failure).toBeInstanceOf(PermissionNeedsClickError)
+  expect((failure as PermissionNeedsClickError).fileName).toBe('launched.tmv')
 })
 
 test('openFromHandle reports a file moved, renamed or deleted since as FileMissingError', async () => {

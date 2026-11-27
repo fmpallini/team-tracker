@@ -7,6 +7,7 @@ import { StallError } from '../src/core/stall'
 const fsMocks = vi.hoisted(() => ({
   FilePermissionError: class FilePermissionError extends Error {},
   FileMissingError: class FileMissingError extends Error {},
+  PermissionNeedsClickError: class PermissionNeedsClickError extends Error { constructor(readonly fileName: string) { super() } },
   supportsFsApi: true,
   pickOpen: vi.fn(),
   pickCreate: vi.fn(),
@@ -184,6 +185,49 @@ test('file handling launch: consumes launchQueue file, decrypts, and calls onOpe
   expect(opened).not.toBeNull()
   expect(opened!.session).toBe(session)
   expect(opened!.doc).toEqual(doc)
+})
+
+test('file handling launch without write access: a dialog names the file, and its Open click asks again and opens it', async () => {
+  // Chromium refuses requestPermission with no click in the page, which is how an OS double-click arrives.
+  const getConsumer = mockLaunchQueue()
+  const handle = {} as unknown as FileSystemFileHandle
+  const session: FileSession = { handle, name: 'team.tmv', lastModified: 1 }
+  fsMocks.openFromHandle
+    .mockRejectedValueOnce(new fsMocks.PermissionNeedsClickError('team.tmv'))
+    .mockResolvedValueOnce({ session, bytes: new Uint8Array([9]) })
+  cryptoMocks.parsePlain.mockReturnValue(createEmptyDocument('en-US'))
+  const onOpen = vi.fn()
+  showStartScreen('en-US', onOpen)
+  await flush()
+
+  getConsumer()({ files: [handle] })
+  await flush()
+  expect(document.querySelector('.tt-modal-message')?.textContent).toContain('“team.tmv”')
+  expect(onOpen).not.toHaveBeenCalled()
+
+  clickByText('Open')
+  await flush()
+  await flush()
+  expect(fsMocks.openFromHandle).toHaveBeenCalledTimes(2)
+  expect(onOpen).toHaveBeenCalledTimes(1)
+  expect((onOpen.mock.calls[0]![0] as OpenedDocument).session).toBe(session)
+})
+
+test('file handling launch without write access: Cancel on that dialog opens nothing and shows no error', async () => {
+  const getConsumer = mockLaunchQueue()
+  fsMocks.openFromHandle.mockRejectedValue(new fsMocks.PermissionNeedsClickError('team.tmv'))
+  const onOpen = vi.fn()
+  showStartScreen('en-US', onOpen)
+  await flush()
+
+  getConsumer()({ files: [{} as unknown as FileSystemFileHandle] })
+  await flush()
+  clickByText('Cancel')
+  await flush()
+
+  expect(fsMocks.openFromHandle).toHaveBeenCalledTimes(1)
+  expect(onOpen).not.toHaveBeenCalled()
+  expect(document.querySelector('.tt-modal-message')).toBeNull()
 })
 
 test('file handling launch: fetchResult resolving null (e.g. picker cancel) is a no-op', async () => {

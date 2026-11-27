@@ -14,6 +14,7 @@ import {
   hasReadWriteAccess,
   FilePermissionError,
   FileMissingError,
+  PermissionNeedsClickError,
   type FileSession,
 } from '../core/fs'
 import { idbGet, idbSet } from '../core/idb'
@@ -24,7 +25,7 @@ import { docToBytes } from '../core/doc-bytes'
 import { newStamp } from '../core/file-stamp'
 import { sharedLiveDb, type LiveDb } from '../core/live-db'
 import { StallError } from '../core/stall'
-import { promptPassword, showErrorModal, toast } from './modal'
+import { promptPassword, showErrorModal, showModal, toast, type ModalHandle } from './modal'
 import { reconcileOpen, type OpenedDocument } from './open-document'
 import { installStartCtrlWheelSize } from './ctrl-wheel-font'
 
@@ -226,7 +227,7 @@ export function showStartScreen(
     openStarted = true
     let result: { session: FileSession; bytes: Uint8Array } | null
     try {
-      result = await fetchResult()
+      result = await fetchWithClick(fetchResult)
     } catch (e) {
       // A refused grant on a remembered / OS-launched file: say so and point at
       // the manual open, which always works (its picker is its own gesture).
@@ -243,6 +244,44 @@ export function showStartScreen(
     }
     if (!result) return
     await decodeAndFinish(result.session, result.bytes)
+  }
+
+  /**
+   * `fetchResult`, given the click Chromium needs before it asks for a file's read-write access. A file the OS
+   * launched the app with (double-click) arrives with no click in the page, so asking straight away fails
+   * (PermissionNeedsClickError): a dialog names the file, and its Open button runs the fetch again from inside the
+   * click, where the browser's prompt is allowed. Cancel opens nothing.
+   */
+  async function fetchWithClick(
+    fetchResult: () => Promise<{ session: FileSession; bytes: Uint8Array } | null>
+  ): Promise<{ session: FileSession; bytes: Uint8Array } | null> {
+    try {
+      return await fetchResult()
+    } catch (e) {
+      if (!(e instanceof PermissionNeedsClickError)) throw e
+      return new Promise((resolve, reject) => {
+        let answered = false
+        const handle: ModalHandle = showModal({
+          title: t(locale, 'open_file'),
+          body: el('p', { class: 'tt-modal-message' }, t(locale, 'start_open_launched', { name: e.fileName })),
+          buttons: [
+            { label: t(locale, 'cancel'), icon: 'close', onClick: () => handle.close() },
+            {
+              label: t(locale, 'start_open_launched_confirm'),
+              primary: true,
+              icon: 'folder',
+              onClick: () => {
+                answered = true
+                handle.close()
+                // Still inside the click: the permission prompt may show.
+                fetchResult().then(resolve, reject)
+              },
+            },
+          ],
+          onClose: () => { if (!answered) resolve(null) },
+        })
+      })
+    }
   }
 
   /**
