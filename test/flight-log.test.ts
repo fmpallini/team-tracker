@@ -75,9 +75,12 @@ test('installing logs the launch and how the last run ended, keeps a heartbeat, 
   vi.useFakeTimers({ now: mountedAt + 60_000 })
   const forwarded = vi.fn()
   console.error = forwarded
+  // A partial stand-in (e2e's font-size-layout spec has one): no addEventListener, so the titlebar watcher throws.
+  Object.defineProperty(navigator, 'windowControlsOverlay', { configurable: true, value: { visible: true, getTitlebarAreaRect: () => ({ width: 900 }) } })
   try {
-    installFlightLog('9.9.9')
+    expect(() => installFlightLog('9.9.9')).not.toThrow()
     installFlightLog('9.9.9') // a second call adds nothing
+    expect(kinds()).toContain('diagnostics-unavailable')
     expect(stored().slice(1, 3)).toEqual([
       expect.objectContaining({ kind: 'launch' }),
       expect.objectContaining({
@@ -94,6 +97,7 @@ test('installing logs the launch and how the last run ended, keeps a heartbeat, 
     expect(stored().at(-1)).toEqual(expect.objectContaining({ kind: 'page-froze', detail: { seconds: 22 } }))
   } finally {
     vi.useRealTimers()
+    delete (navigator as unknown as Record<string, unknown>).windowControlsOverlay
   }
   localStorage.clear()
   resetFlightLogForTests()

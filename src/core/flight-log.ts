@@ -91,12 +91,18 @@ export function installFlightLog(version: string): void {
     heapMb: heapMb(),
   })
   if (previous) logEvent('previous-run', previous)
-  startHeartbeat()
-  watchLongTasks()
+  // Each watcher leans on a browser API that may be missing or partial (a stand-in windowControlsOverlay without
+  // addEventListener once kept the whole app from starting): one that throws is logged and skipped, never fatal.
+  for (const watch of [startHeartbeat, watchLongTasks, watchTitlebar]) {
+    try {
+      watch()
+    } catch (e) {
+      logEvent('diagnostics-unavailable', { watch: watch.name, ...describeError(e) })
+    }
+  }
   // Edge's own UI coming up over the page (a permission bubble, a titlebar icon) takes focus or reshapes the titlebar.
   window.addEventListener('focus', () => logEvent('window-focus'))
   window.addEventListener('blur', () => logEvent('window-blur'))
-  watchTitlebar()
   window.addEventListener('error', (e) => {
     logEvent('uncaught', { ...describeError(e.error ?? e.message), at: `${e.filename.split('/').pop() ?? ''}:${e.lineno}:${e.colno}` })
   })
