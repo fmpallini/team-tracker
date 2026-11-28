@@ -1,19 +1,22 @@
-// scripts/generate-demo-video-short.mjs — ~70s highlight cut of the feature
-// tour (see generate-demo-video.mjs for the full version, and
-// demo-video-lib.mjs for shared plumbing/why).
+// scripts/generate-demo-video-short.mjs — the README's ~75s feature tour
+// (docs/videos/feature-tour-short.{webm,gif}); demo-video-lib.mjs has the
+// shared plumbing and the why.
 //
-// Unlike the old version, this records NO setup: demo-seed.mjs builds a dense
-// dummy document (4 teams, the first one fully loaded with an org tree, a
-// board with custom columns, milestones and a populated risk quadrant), and
-// runDemo() drops it straight into OPFS. The tour opens that file and every
-// second of the recording is a real feature being shown.
+// Run by hand: `npm run build && node scripts/generate-demo-video-short.mjs`
+// (needs ffmpeg on PATH for the GIF and the soundtrack).
+//
+// It records NO setup: it opens the README's sample workspace
+// (sample-seed.mjs, the same file the "sample file" link serves), which
+// runDemo() drops straight into OPFS, so every second of the recording is a
+// real feature being shown. The beats lean on that file's content (Mei's
+// overdue 1:1 and open items, risk rk3, the "outage" risk, its favorites).
 import path from 'node:path'
 import { expect } from '@playwright/test'
 import {
   runDemo, caption, hideCaption, pause, click, moveMouseTo,
   switchPaneModule, openSeededFile, OUT_DIR,
 } from './demo-video-lib.mjs'
-import { buildSeedBytes, SEED_FILENAME } from './demo-seed.mjs'
+import { buildSampleBytes, SAMPLE_FILENAME } from './sample-seed.mjs'
 
 const PORT = 4321 // distinct from generate-demo-video.mjs's 4320 and playwright.config.ts's 4319, so all three can run side by side
 const OUT_FILE = 'feature-tour-short.webm'
@@ -73,6 +76,36 @@ async function showOrgChart(page) {
   await hideCaption(page)
 }
 
+// Mei's page is open in pane 1 (showOrgChart): her 1:1 is overdue and her last
+// one left two open agreed actions, which New 1:1 carries into a fresh block.
+async function showOneOnOne(page) {
+  const pane1 = page.locator('.tt-pane[data-pane-idx="1"]')
+  await caption(page, '1:1 overdue? New 1:1 carries the open items forward', 1700)
+  const cadence = pane1.locator('.tt-person-cadence')
+  const cb = await cadence.boundingBox()
+  await moveMouseTo(page, cb.x + cb.width / 2, cb.y + cb.height / 2)
+  await pause(page, 700)
+  await click(page, pane1.locator('.tt-person-header-one-on-one-btn'))
+  // The caret lands in the new block's first section.
+  await pane1.locator('.editor').first().pressSequentially('Energised by owning the load test.', { delay: 24 })
+  await pause(page, 600)
+  await hideCaption(page)
+
+  await caption(page, 'Checklists — tick them off as you go', 1300)
+  // The new block's copy is the last one (the original above is now marked carried); its box sits in the item's
+  // left gutter. Not located by data-task="open": that stops matching the moment the click ticks it.
+  const item = pane1.locator('li[data-task]', { hasText: 'Book two pairing sessions' }).last()
+  await expect(item).toHaveAttribute('data-task', 'open')
+  await item.scrollIntoViewIfNeeded()
+  const ib = await item.boundingBox()
+  await moveMouseTo(page, ib.x + 8, ib.y + 10)
+  await pause(page, 250)
+  await page.mouse.down(); await pause(page, 70); await page.mouse.up()
+  await expect(item).toHaveAttribute('data-task', 'done')
+  await pause(page, 900)
+  await hideCaption(page)
+}
+
 async function showRichNotes(page) {
   await caption(page, 'Rich notes — shortcut combos and markdown', 1400)
   const editor = page.locator(PANE0_EDITOR).first()
@@ -93,27 +126,9 @@ async function showRichNotes(page) {
   await hideCaption(page)
 }
 
-async function showChromeCollapse(page) {
-  await caption(page, 'Clear the chrome — one wide pane', 1300)
-  await click(page, page.locator('.tt-daily-calendar-toggle'))
-  await pause(page, 450)
-  await click(page, page.locator('.tt-sidebar-toggle'))
-  await pause(page, 550)
-  // Collapse to a single pane too. Focus the left pane first — Alt+↑ collapses
-  // to whichever pane is currently focused, and the org-chart beat left pane 1
-  // (now Mei's notes) focused.
-  await page.keyboard.press('Alt+ArrowLeft')
-  await pause(page, 200)
-  await page.keyboard.press('Alt+ArrowUp')
-  await pause(page, 900)
-  await hideCaption(page)
-}
-
 async function showTeamSwitch(page) {
   await caption(page, 'Every team is its own space', 1200)
-  await click(page, page.locator('.tt-sidebar-toggle')) // bring the team list back
-  await pause(page, 400)
-  for (const key of ['Alt+2', 'Alt+3', 'Alt+1']) {
+  for (const key of ['Alt+2', 'Alt+1']) {
     await page.keyboard.press(key)
     await pause(page, 750)
   }
@@ -151,9 +166,11 @@ async function showTemplate(page) {
   await caption(page, 'One key drops in a template', 1500)
   const personEditor = page.locator('.tt-person-notes .editor').first()
   await click(page, personEditor)
+  // The picker opens only for a `/` alone on its line: Miguel's notes end on a paragraph, so a new line after it.
+  await page.keyboard.press('Control+End')
+  await page.keyboard.press('Enter')
   await personEditor.pressSequentially('/', { delay: 40 })
-  // Exact name: "First 1:1" also contains "1:1" and is listed first.
-  const tplItem = page.locator('.tt-atref-dropdown .tt-atref-item', { hasText: /^1:1$/ })
+  const tplItem = page.locator('.tt-atref-dropdown .tt-atref-item', { hasText: 'Career conversation' })
   await expect(tplItem).toBeVisible({ timeout: 5000 })
   await pause(page, 250)
   await click(page, tplItem)
@@ -227,12 +244,8 @@ async function showFavorites(page) {
   await caption(page, 'Favorites lead Fast Switch — across every team', 1600)
   await page.keyboard.press('Control+Shift+k')
   await expect(page.locator('.tt-palette-overlay')).toBeVisible()
-  await pause(page, 1500)
-  // Walk down onto the other team's entry and back, then open Milestones.
-  await page.keyboard.press('ArrowDown')
-  await pause(page, 800)
-  await page.keyboard.press('ArrowUp')
-  await pause(page, 500)
+  await pause(page, 1800)
+  // The first favorite is the Milestones board.
   await page.keyboard.press('Enter')
   await expect(page.locator('.tt-palette-overlay')).toBeHidden()
   await pause(page, 1300)
@@ -240,10 +253,14 @@ async function showFavorites(page) {
 }
 
 async function showFastSwitch(page) {
-  await caption(page, 'Jump anywhere — Ctrl+Shift+K', 1400)
+  await caption(page, 'Jump anywhere, or type > for commands — Ctrl+Shift+K', 1400)
   await page.keyboard.press('Control+Shift+k')
   await expect(page.locator('.tt-palette-overlay')).toBeVisible()
-  await page.locator('.tt-palette-input').pressSequentially('outage', { delay: 55 })
+  const input = page.locator('.tt-palette-input')
+  await input.pressSequentially('>', { delay: 55 })
+  await pause(page, 1000)
+  await page.keyboard.press('Backspace')
+  await input.pressSequentially('outage', { delay: 55 })
   await pause(page, 700)
   await page.keyboard.press('Enter')
   await expect(page.locator('.tt-pane[data-pane-idx="0"] .tt-risk-quadrant-chart')).toBeVisible({ timeout: 5000 })
@@ -294,8 +311,8 @@ async function script(page) {
   await hideCaption(page)
 
   await showOrgChart(page)
+  await showOneOnOne(page)
   await showRichNotes(page)
-  await showChromeCollapse(page)
   await showTeamSwitch(page)
   await showAtReference(page)
   await showTemplate(page)
@@ -316,7 +333,7 @@ runDemo({
   music: MUSIC_FILE,
   port: PORT,
   script,
-  seed: { filename: SEED_FILENAME, bytes: buildSeedBytes() },
+  seed: { filename: SAMPLE_FILENAME, bytes: buildSampleBytes() },
 }).catch((err) => {
   console.error(err)
   process.exit(1)

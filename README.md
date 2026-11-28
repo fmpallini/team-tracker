@@ -12,17 +12,16 @@ with a populated workspace.
 
 ### A one-minute tour
 
-Re-organise an org chart by drag, double-click a person to open their notes,
-write rich text with shortcuts or markdown, switch between fully separate
-teams, jump to any module, item or favorite in any team with Fast Switch
-(`Ctrl+Shift+K`), follow `@`-references
-(plain click jumps to the item, `Ctrl`+click opens it in the second pane),
-drop in one-key templates, tick off checklists and carry the open items into
-the next 1:1 (with a reminder when one is overdue), run a kanban board with
-custom columns, drag a risk on the chance × impact chart to re-score it, and
-switch to dark mode.
+Re-organise an org chart by drag, open a person whose 1:1 is overdue and start
+a new one that carries the open checklist items forward, tick them off, write
+rich text with shortcuts or markdown, switch between fully separate teams,
+follow `@`-references (plain click jumps to the item, `Ctrl`+click opens it in
+the second pane), drop in one-key templates, switch modules with `F2`–`F8`,
+run a kanban board with custom columns, star favorites and jump to them — or to
+any item or command in any team — with Fast Switch (`Ctrl+Shift+K`), drag a
+risk on the chance × impact chart to re-score it, and switch to dark mode.
 
-![One-minute tour of Team Tracker: org chart re-org, rich text, team switching, module tabs, favorites, Fast Switch, @-references, templates, custom kanban columns, risk scoring, and dark mode](docs/videos/feature-tour-short.gif)
+![One-minute tour of Team Tracker: org chart re-org, 1:1 with carried-over checklist items, rich text, team switching, @-references, templates, module tabs, custom kanban columns, favorites, Fast Switch, risk scoring, and dark mode](docs/videos/feature-tour-short.gif)
 
 [▶ Watch with sound](https://github.com/fmpallini/team-tracker/blob/main/docs/videos/feature-tour-short.webm)
 (the GIF is silent; GitHub can't embed `<video>` in a README, so this link
@@ -37,10 +36,10 @@ opens the same clip in its own player).
 | Daily notes + team hierarchy | Rich text — shortcuts + markdown |
 | ![Tasks kanban board with a custom column, tags, due dates, and assignees](docs/screenshots/action-items-kanban.png) | ![Milestones timeline and list, with a done and an overdue item](docs/screenshots/milestones.png) |
 | Tasks — kanban with custom columns | Milestones — timeline + list |
-| ![Risks matrix with chance/impact/exposure and mitigation plans](docs/screenshots/risks.png) | ![A person's notes page with role, backlink badge, and a filled 1:1 template](docs/screenshots/person-notes.png) |
-| Risks — chance × impact exposure | Per-person notes + backlinks |
+| ![Risks matrix with chance/impact/exposure and mitigation plans](docs/screenshots/risks.png) | ![A person's notes page: last 1:1 and cadence in the header, and a New 1:1 that carried the open checklist items over from the previous one](docs/screenshots/person-notes.png) |
+| Risks — chance × impact exposure | Per-person notes + New 1:1 |
 | ![Ctrl+Shift+K fast switch for jumping to any module, item, favorite or due item in any team](docs/screenshots/command-palette.png) | ![Ctrl+Shift+F cross-team search with highlighted matches](docs/screenshots/global-search.png) |
-| `Ctrl+Shift+K` fast switch | `Ctrl+Shift+F` search across every team |
+| `Ctrl+Shift+K` fast switch (`>` for commands) | `Ctrl+Shift+F` search across every team |
 
 </details>
 
@@ -68,9 +67,10 @@ your machine. Team Tracker doesn't:
   a password-less plain-text file if you'd rather skip the overhead.
 - 🪶 **Tiny** — the entire app is one HTML file, with no dependencies
   ([why that matters](#zero-runtime-dependencies)).
-- ⌨️ **Keyboard-first** — `Ctrl+Shift+K` fast switch, `Ctrl+F` /
-  `Ctrl+Shift+F` search, `Alt+1`…`Alt+9` team switching, `Alt+Shift+←/→` pane
-  history, split-view panes, and shortcuts for every module. Built for desktop
+- ⌨️ **Keyboard-first** — `Ctrl+Shift+K` fast switch (type `>` for every
+  command), `Ctrl+F` / `Ctrl+Shift+F` search, `Alt+1`…`Alt+9` teams, `F2`…`F8`
+  modules, `F1` help, `Alt+Shift+←/→` pane history, split-view panes, and
+  anything you can drag also moves with `Ctrl`+arrows. Built for desktop
   Chromium browsers ([requirements](#getting-started)).
 - 🎨 **Yours to tune** — 12 color palettes (high-contrast and colorblind-safe
   among them), light/dark/system theme, 7 font stacks, adjustable font size,
@@ -114,6 +114,11 @@ Linux, drop the drive letter and use `google-chrome`
 For Edge, swap in `msedge` (`microsoft-edge` on Linux, `"Microsoft Edge"` on
 macOS). The app's own help dialog (the help button in the header) shows the
 exact command for your browser, ready to copy.
+
+Either way, the start screen's **Reopen last…** opens your file again, and
+ticking **Reopen this file automatically next time** skips the start screen;
+for a file to open on its own, choose "Allow on every visit" when the browser
+asks for access to it.
 
 ## Your data
 
@@ -306,14 +311,20 @@ uses any more is dropped from the file the next time it is written.
   is added, but every file write includes all of them, so a file full of pictures
   takes longer to write, which is why the budget exists.
 - **Same picture twice** is stored once.
-- **Older versions:** a file saved by this version cannot be opened by Team
-  Tracker releases before 3.2.0.
+
+**Can an older release of the app open my file?**
+Not always. The file is written in the newest format, and a release older than
+that format refuses it and asks you to update. The web app updates itself; for
+the local file, download the latest release.
 
 **Does it send reminders or notifications for due dates?**
 No push or email. Due and overdue items show up inside the app — sidebar and
-header badges, the due list, the "Due dates" group in Fast Switch, kanban
-highlighting — and, in the installed app, as a count on its OS icon badge where
-the OS supports it. Nothing alerts you while the app is closed.
+header badges, dots on the module tabs, the due list, the "Due dates" group in
+Fast Switch, kanban highlighting — and, in the installed app, as a count on its
+OS icon badge where the OS supports it. The same goes for 1:1s: give people a
+cadence (14 days by default for members) and a due or overdue 1:1 shows on the
+org chart, in the due list and on the person's page. Nothing alerts you while
+the app is closed.
 
 **Is the data clean-up in Preferences → Data safe to run?**
 It's irreversible (no undo, unlike deleting a single item) and deliberately

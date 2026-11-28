@@ -4,6 +4,14 @@ All notable changes to Team Tracker are documented here, written for people usin
 
 See [CLAUDE.md](CLAUDE.md#changelog) for how and when to update this file.
 
+## [4.0.0] - 2026-11-27
+
+### Changed
+- The sample file linked from the README now shows the 1:1 flow: a member overdue for a 1:1 with open items to carry forward, checklists, and the current built-in templates.
+
+### Fixed
+- Search results no longer show checklist boxes (`[ ]`) or nested-list markers in their snippets.
+
 ## [3.9.9] - 2026-11-27
 
 ### Fixed

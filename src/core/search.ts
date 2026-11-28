@@ -110,7 +110,7 @@ export function normalizeWithOffsets(s: string): { normalized: string; offsets: 
 }
 
 // Strips the basic markdown syntax this app produces so search snippets read
-// as plain text: heading/list/ordered-list markers, bold/italic/strike/underline,
+// as plain text: heading/list/ordered-list/checklist markers, bold/italic/strike/underline,
 // @[label](ref) references (kept as their label), and refs.ts's
 // single-tilde unlinked-reference marker (also kept as its label).
 function stripMd(s: string): string {
@@ -136,8 +136,8 @@ function stripMdSyntax(s: string): string {
       if (img) return img.alt
       let l = line
       l = l.replace(/^#{1,6}\s+/, '')
-      l = l.replace(/^-\s+/, '')
-      l = l.replace(/^\d+\.\s+/, '')
+      // A list marker at any nesting depth, and a bullet's checklist box (`[ ]` open, `[x]` done, `[>]` carried).
+      l = l.replace(/^\s*(?:-\s+(?:\[[ x>]\]\s+)?|\d+\.\s+)/, '')
       l = l.replace(/@\[([^\]]+)\]\([^)]*\)/g, '$1')
       l = l.replace(/\*\*([^*]+)\*\*/g, '$1')
       l = l.replace(/~~([^~]+)~~/g, '$1')

@@ -50,6 +50,19 @@ matching, non-empty `## [X.Y.Z]` entry to [CHANGELOG.md](CHANGELOG.md), or CI's
 The codebase has zero runtime dependencies — everything in `devDependencies`
 is build and test tooling. Adding a runtime dependency is a hard no.
 
+## README screenshots and tour video
+
+Both are taken from the README's sample workspace
+([scripts/sample-seed.mjs](scripts/sample-seed.mjs), also served as
+`sample.tmv`), with dates relative to the day they run. After a visible UI
+change, re-render them by hand (the tour needs `ffmpeg` on `PATH`):
+
+```
+npm run build
+node scripts/generate-screenshots.mjs
+node scripts/generate-demo-video-short.mjs
+```
+
 ## Adding a new module/pane
 
 Because every pane is just a render function registered by string key, adding
