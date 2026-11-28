@@ -1,13 +1,15 @@
-// scripts/demo-video-lib.mjs — shared plumbing for generate-demo-video-short.mjs
-// (the ~60s feature-tour cut). Not itself runnable.
+// scripts/demo-video-lib.mjs — shared plumbing for the README media:
+// generate-demo-video-short.mjs (the ~75s feature tour) and
+// generate-screenshots.mjs. Not itself runnable.
 //
-// Served over http://localhost (e2e/static-server.mjs), not file://: Chromium
+// Both open the sample workspace (sample-seed.mjs) through withSeededApp(),
+// served over http://localhost (e2e/static-server.mjs), not file://: Chromium
 // treats localhost as a *secure* context, which unlocks the real File System
 // Access API via e2e/opfs-shim.ts's installOpfsPickerShim (OPFS-backed, real
 // FileSystemFileHandle, just sourced from sandboxed storage instead of a
-// native OS picker Playwright can't drive). That lets the tour open a real
-// seeded .tmv file, not just the file:// download-fallback path
-// generate-screenshots.mjs deliberately exercises.
+// native OS picker Playwright can't drive). So the app runs as it does for a
+// Chrome user — the save indicator reads "Saved", not the Firefox-style
+// "Export file" of the file:// download fallback.
 //
 // Playwright records raw WebM (its native format). runDemo() then re-encodes
 // that with ffmpeg to a smaller VP9 WebM — laying `music` under it when given —
@@ -17,10 +19,10 @@
 // is untouched. If ffmpeg isn't on PATH the raw WebM is kept as-is and a
 // warning is printed; nothing hard-fails.
 //
-// Every interaction is driven through the click()/type() helpers below
+// Every tour interaction is driven through the click() helper below
 // instead of Playwright's instant .click()/.fill(): they glide a real,
 // visible fake cursor (an arrow pointer, injected DOM overlay tracking real
-// mousemove events) to the target and type at a readable pace, so the
+// mousemove events) to the target, and the tour types at a readable pace, so the
 // recording looks like a person driving the app instead of a script. A
 // caption bar (same overlay) narrates each section. Both are pure page-side
 // DOM burned into the recording — no subtitle-track muxing.
@@ -30,11 +32,10 @@ import { spawn, spawnSync } from 'node:child_process'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { installOpfsPickerShim, setNextOpenName, writeOpfsFile } from '../e2e/opfs-shim.ts'
-import { blockUpdateCheck } from '../e2e/helpers.ts'
+import { blockUpdateCheck } from '../e2e/update-check.ts'
 
 export const HERE = path.dirname(fileURLToPath(import.meta.url))
 export const OUT_DIR = path.resolve(HERE, '../docs/videos')
-export const PASSWORD = 'demo-password-123'
 // Bigger than the app's real minimum desktop shell so the recording (and the
 // GIF scaled down from it) stays crisp — the layout is fixed-desktop anyway.
 export const VIEWPORT = { width: 1600, height: 1000 }
@@ -169,44 +170,11 @@ export async function click(page, locator) {
   await clickAt(page, rect.x + rect.width / 2, rect.y + rect.height / 2)
 }
 
-/** Clicks into `locator` (visible cursor travel), then types at a readable pace. */
-export async function type(page, locator, text, delay = 32) {
-  await click(page, locator)
-  await locator.pressSequentially(text, { delay })
-}
-
-export async function blurAway(page) {
-  await clickAt(page, 5, 5)
-}
-
-export async function focusedRow(page, rowSelector, idAttr) {
-  await page.waitForFunction((sel) => document.activeElement?.closest(sel) != null, rowSelector)
-  const id = await page.evaluate(
-    ({ sel, attr }) => document.activeElement.closest(sel).getAttribute(attr),
-    { sel: rowSelector, attr: idAttr }
-  )
-  return page.locator(`${rowSelector}[${idAttr}="${id}"]`)
-}
-
 export async function pause(page, ms) {
   await page.waitForTimeout(ms)
 }
 
-// --- App flows shared by both tours ------------------------------------------
-
-export async function createTeam(page, name, emoji, first) {
-  if (first) {
-    await click(page, page.getByRole('button', { name: /Create first team/ }))
-  } else {
-    await click(page, page.locator('.tt-team-add-btn'))
-  }
-  const dialog = page.getByRole('dialog')
-  await type(page, dialog.locator('input[name="tt-team-name"]'), name)
-  await type(page, dialog.locator('input[name="tt-team-emoji"]'), emoji)
-  await click(page, dialog.locator('input[name="tt-team-name"]')) // closes emoji-picker popup
-  await click(page, dialog.getByRole('button', { name: 'Save' }))
-  await expect(dialog).toBeHidden()
-}
+// --- App flows ----------------------------------------------------------------
 
 export async function switchPaneModule(page, paneIdx, label) {
   const pane = page.locator(`.tt-pane[data-pane-idx="${paneIdx}"]`)
@@ -220,33 +188,8 @@ export async function switchPaneModule(page, paneIdx, label) {
   await click(page, pane.locator('.tt-pane-menu-item', { hasText: label }).first())
 }
 
-export async function addPerson(page, paneIdx, name, role) {
-  const pane = page.locator(`.tt-pane[data-pane-idx="${paneIdx}"]`)
-  await click(page, pane.locator('.tt-people-add-btn, .tt-empty-state-action').filter({ visible: true }).first())
-  const dialog = page.getByRole('dialog')
-  await type(page, dialog.locator('input[name="tt-person-name"]'), name)
-  await type(page, dialog.locator('input[name="tt-person-role"]'), role)
-  await click(page, dialog.getByRole('button', { name: 'Save' }))
-  await expect(dialog).toBeHidden()
-}
-
-export async function addChildPerson(page, paneIdx, parentName, childName, role) {
-  const pane = page.locator(`.tt-pane[data-pane-idx="${paneIdx}"]`)
-  await click(page, pane.locator('.tt-org-box', { hasText: parentName }).locator('.tt-people-more-btn'))
-  await click(page, page.locator('.tt-context-menu-item', { hasText: 'Add report' }))
-  const dialog = page.getByRole('dialog')
-  await type(page, dialog.locator('input[name="tt-person-name"]'), childName)
-  await type(page, dialog.locator('input[name="tt-person-role"]'), role)
-  await click(page, dialog.getByRole('button', { name: 'Save' }))
-  await expect(dialog).toBeHidden()
-}
-
-export async function typeIntoEditor(page, editor, text, delay = 18) {
-  await type(page, editor, text, delay) // longer prose: faster than form fields or it drags
-}
-
 /**
- * Clicks the start screen's "Open file…" button. runDemo() has already
+ * Clicks the start screen's "Open file…" button. withSeededApp() has already
  * dropped the seed bytes into OPFS and pointed the picker shim at them, so
  * this returns the pre-built document — a password-less (plain text) file, so
  * no password prompt — and the shell is up by the time this resolves.
@@ -341,93 +284,88 @@ async function assembleFrames(framesDir, frames, wallSec, tmpDir) {
 }
 
 /**
- * Spins up e2e/static-server.mjs on `port`, launches a recorded Chromium
- * context, runs `script(page)`, then finalizes the recording as
- * `docs/videos/<outFile>` (ffmpeg re-encode; see postProcessRecording).
- * `script` gets a real page already at APP_URL with the overlay installed and
- * the OPFS picker shim + update-check block already wired — it should drive
- * the tour and return normally when done.
- *
- * `seed` (optional): `{ filename, bytes }`. When given, the bytes are written
- * into OPFS and the picker shim is pointed at them before `script` runs, so
- * the tour can `openSeededFile(page)` instead of building a document on
- * camera. `gifFile` (optional): also emit `docs/videos/<gifFile>`. `music`
- * (optional): absolute path to an audio file to lay under the WebM.
+ * Spins up e2e/static-server.mjs on `port`, launches Chromium at `viewport`
+ * with the OPFS picker shim and the update-check block, opens the app, drops
+ * `seed` (`{ filename, bytes }`) into OPFS and points the picker at it, then
+ * runs `fn(page)` on the start screen — call openSeededFile() to open it.
+ * Returns what `fn` returns; the browser and the server are closed either way.
  */
-export async function runDemo({ outFile, gifFile, port, script, seed, music }) {
-  const baseUrl = `http://localhost:${port}`
-  const appUrl = `${baseUrl}/app.html`
-  const tmpDir = path.resolve(HERE, `../.video-tmp-${port}`)
-
-  await mkdir(OUT_DIR, { recursive: true })
-  await rm(tmpDir, { recursive: true, force: true })
-  await mkdir(tmpDir, { recursive: true })
-
+export async function withSeededApp({ port, viewport, seed }, fn) {
+  const appUrl = `http://localhost:${port}/app.html`
   const server = spawn(process.execPath, [path.resolve(HERE, '../e2e/static-server.mjs')], {
     env: { ...process.env, E2E_PORT: String(port) },
     stdio: 'inherit',
   })
   const stopServer = () => { server.kill() }
   process.on('exit', stopServer)
-
-  const startedAt = Date.now()
   try {
     await waitForServer(appUrl)
-    let rawPath
-
     const browser = await chromium.launch()
-    const context = await browser.newContext({
-      viewport: VIEWPORT,
-      acceptDownloads: true,
-      locale: 'en-US',
-    })
-    await installOpfsPickerShim(context)
-    await blockUpdateCheck(context)
-    const page = await context.newPage()
-
     try {
+      // App locale follows navigator.language — pinned like playwright.config.ts, so the copy is English on any host.
+      const context = await browser.newContext({ viewport, acceptDownloads: true, locale: 'en-US' })
+      await installOpfsPickerShim(context)
+      await blockUpdateCheck(context)
+      const page = await context.newPage()
       await page.goto(appUrl)
-      await installOverlay(page)
-      if (seed) {
-        await writeOpfsFile(page, seed.filename, Array.from(seed.bytes))
-        await setNextOpenName(page, seed.filename)
-      }
-      await pause(page, 400)
-      // Frames come from the screencast as q100 JPEGs rather than Playwright's
-      // recordVideo, whose fixed ~1 Mbit/s VP8 stream smears text before ffmpeg
-      // ever sees it. Frames only arrive when the page changes, so each one is
-      // kept with its timestamp and replayed for exactly that long below.
-      const framesDir = path.join(tmpDir, 'frames')
-      await mkdir(framesDir, { recursive: true })
-      const frames = []
-      const writes = []
-      const recStart = Date.now()
-      await page.screencast.start({
-        size: VIEWPORT,
-        quality: 100,
-        onFrame: ({ data, timestamp }) => {
-          const name = `f${String(frames.length).padStart(6, '0')}.jpg`
-          frames.push({ name, timestamp })
-          writes.push(writeFile(path.join(framesDir, name), data))
-        },
-      })
-      await script(page)
-      await page.screencast.stop()
-      await Promise.all(writes)
-      rawPath = await assembleFrames(framesDir, frames, (Date.now() - recStart) / 1000, tmpDir)
+      await writeOpfsFile(page, seed.filename, Array.from(seed.bytes))
+      await setNextOpenName(page, seed.filename)
+      return await fn(page)
     } finally {
-      await context.close()
       await browser.close()
     }
-
-    const dest = path.join(OUT_DIR, outFile)
-    const gifDest = gifFile ? path.join(OUT_DIR, gifFile) : null
-    await postProcessRecording(rawPath, dest, gifDest, tmpDir, music)
-    await rm(tmpDir, { recursive: true, force: true })
-    const elapsedS = ((Date.now() - startedAt) / 1000).toFixed(1)
-    const wrote = [dest, gifDest].filter(Boolean).map((f) => path.relative(process.cwd(), f)).join(' + ')
-    console.log(`Wrote ${wrote} (~${elapsedS}s wall)`)
   } finally {
     stopServer()
   }
+}
+
+/**
+ * Records `script(page)` against the seeded app (withSeededApp) and finalizes
+ * the recording as `docs/videos/<outFile>` (ffmpeg re-encode; see
+ * postProcessRecording). `script` gets the start screen with the overlay
+ * installed and should drive the tour, opening the file with openSeededFile().
+ * `gifFile` (optional): also emit `docs/videos/<gifFile>`. `music`
+ * (optional): absolute path to an audio file to lay under the WebM.
+ */
+export async function runDemo({ outFile, gifFile, port, script, seed, music }) {
+  const tmpDir = path.resolve(HERE, `../.video-tmp-${port}`)
+  await mkdir(OUT_DIR, { recursive: true })
+  await rm(tmpDir, { recursive: true, force: true })
+  await mkdir(tmpDir, { recursive: true })
+
+  const startedAt = Date.now()
+  const rawPath = await withSeededApp({ port, viewport: VIEWPORT, seed }, async (page) => {
+    await installOverlay(page)
+    await pause(page, 400)
+    // Frames come from the screencast as q100 JPEGs rather than Playwright's
+    // recordVideo, whose fixed ~1 Mbit/s VP8 stream smears text before ffmpeg
+    // ever sees it. Frames only arrive when the page changes, so each one is
+    // kept with its timestamp and replayed for exactly that long below.
+    const framesDir = path.join(tmpDir, 'frames')
+    await mkdir(framesDir, { recursive: true })
+    const frames = []
+    const writes = []
+    const recStart = Date.now()
+    await page.screencast.start({
+      size: VIEWPORT,
+      quality: 100,
+      onFrame: ({ data, timestamp }) => {
+        const name = `f${String(frames.length).padStart(6, '0')}.jpg`
+        frames.push({ name, timestamp })
+        writes.push(writeFile(path.join(framesDir, name), data))
+      },
+    })
+    await script(page)
+    await page.screencast.stop()
+    await Promise.all(writes)
+    return assembleFrames(framesDir, frames, (Date.now() - recStart) / 1000, tmpDir)
+  })
+
+  const dest = path.join(OUT_DIR, outFile)
+  const gifDest = gifFile ? path.join(OUT_DIR, gifFile) : null
+  await postProcessRecording(rawPath, dest, gifDest, tmpDir, music)
+  await rm(tmpDir, { recursive: true, force: true })
+  const elapsedS = ((Date.now() - startedAt) / 1000).toFixed(1)
+  const wrote = [dest, gifDest].filter(Boolean).map((f) => path.relative(process.cwd(), f)).join(' + ')
+  console.log(`Wrote ${wrote} (~${elapsedS}s wall)`)
 }

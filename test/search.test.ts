@@ -30,6 +30,16 @@ test('finds accent-insensitive within team scope', () => {
   expect(r[0]!.snippet).not.toContain('**')
 })
 
+test('checklist boxes and nested list markers stay out of the snippet', () => {
+  const d = fixture()
+  d.teams[0]!.generalNotes = '- [ ] Book the venue\n- [x] Send the invites\n  - [>] Confirm the caterer\n  - nested venue note'
+  for (const q of ['venue', 'invites', 'caterer']) {
+    const r = searchDocument(d, q, 't1')
+    expect(r).toHaveLength(1)
+    expect(r[0]!.snippet).not.toMatch(/\[[ x>]\]|(^|\n)\s*- /)
+  }
+})
+
 test('a note containing the unlinked-ref marker (~Label~) is matched and its snippet shows the plain label, no tildes', () => {
   const d = fixture()
   d.teams[0]!.generalNotes = 'Blocked by ~Fix bug~ from last sprint'
